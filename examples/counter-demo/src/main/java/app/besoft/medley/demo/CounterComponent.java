@@ -7,19 +7,16 @@ import app.besoft.medley.core.component.Annotations.State;
 import app.besoft.medley.core.component.Component;
 import app.besoft.medley.spring.MedleyRoute;
 
-import org.springframework.beans.factory.config.ConfigurableBeanFactory;
-import org.springframework.context.annotation.Scope;
-
 /**
  * A counter mounted at {@code /counter}.
  *
- * <p>Prototype scope ensures each page load gets a fresh instance with its own state. In a
- * real component you would {@code @Autowired} repositories/services here and use them directly
- * in {@code onInit()} and actions — no REST layer in between.</p>
+ * <p>{@code @MedleyRoute} carries prototype scope, so each page load gets a fresh instance with
+ * its own state — no manual {@code @Scope} needed. In a real component you would
+ * {@code @Autowired} repositories/services here and use them directly in {@code onInit()} and
+ * actions — no REST layer in between.</p>
  */
 @MedleyRoute("/counter")
 @MedleyComponent("counter")
-@Scope(ConfigurableBeanFactory.SCOPE_PROTOTYPE)
 public class CounterComponent extends Component {
 
     @State int count = 0;
