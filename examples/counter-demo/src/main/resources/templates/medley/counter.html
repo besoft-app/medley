@@ -1,0 +1,6 @@
+<div class="counter">
+  <button @click="decrement" *if="count > 0">−</button>
+  <span>{{ label }}: {{ count }}</span>
+  <button @click="increment">+</button>
+  <button @click="reset" *if="count > 0">reset</button>
+</div>

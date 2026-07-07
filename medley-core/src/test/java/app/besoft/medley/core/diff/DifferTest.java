@@ -1,0 +1,124 @@
+package app.besoft.medley.core.diff;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.util.List;
+import java.util.Map;
+
+import app.besoft.medley.core.vnode.VNode;
+import org.junit.jupiter.api.Test;
+
+class DifferTest {
+
+    private static VNode.VElement el(String id, String tag, Map<String, String> attrs,
+                                     Map<String, String> events, List<VNode> children, String key) {
+        return new VNode.VElement(id, tag, attrs, events, children, key);
+    }
+
+    private static VNode.VText txt(String id, String value) {
+        return new VNode.VText(id, value);
+    }
+
+    @Test
+    void noChangeNoPatches() {
+        VNode a = el("r", "div", Map.of(), Map.of(), List.of(txt("r.0", "x")), null);
+        VNode b = el("r", "div", Map.of(), Map.of(), List.of(txt("r.0", "x")), null);
+        assertTrue(Differ.diff(a, b).isEmpty());
+    }
+
+    @Test
+    void textChangeProducesSetText() {
+        VNode a = el("r", "div", Map.of(), Map.of(), List.of(txt("r.0", "1")), null);
+        VNode b = el("r", "div", Map.of(), Map.of(), List.of(txt("r.0", "2")), null);
+        List<Patch> patches = Differ.diff(a, b);
+        assertEquals(1, patches.size());
+        assertTrue(patches.get(0) instanceof Patch.SetText);
+        Patch.SetText p = (Patch.SetText) patches.get(0);
+        assertEquals("r.0", p.id());
+        assertEquals("2", p.value());
+    }
+
+    @Test
+    void attributeAddedAndRemoved() {
+        VNode a = el("r", "div", Map.of("class", "a"), Map.of(), List.of(), null);
+        VNode b = el("r", "div", Map.of("id", "x"), Map.of(), List.of(), null);
+        List<Patch> patches = Differ.diff(a, b);
+        // expect one SetAttr(id=x) and one RemoveAttr(class)
+        assertTrue(patches.stream().anyMatch(p -> p instanceof Patch.SetAttr sa
+                && sa.name().equals("id") && sa.value().equals("x")));
+        assertTrue(patches.stream().anyMatch(p -> p instanceof Patch.RemoveAttr ra
+                && ra.name().equals("class")));
+    }
+
+    @Test
+    void eventRewired() {
+        VNode a = el("r", "button", Map.of(), Map.of("click", "old"), List.of(), null);
+        VNode b = el("r", "button", Map.of(), Map.of("click", "new"), List.of(), null);
+        List<Patch> patches = Differ.diff(a, b);
+        assertEquals(1, patches.size());
+        assertTrue(patches.get(0) instanceof Patch.SetEvent);
+        assertEquals("new", ((Patch.SetEvent) patches.get(0)).action());
+    }
+
+    @Test
+    void tagChangeProducesReplace() {
+        VNode a = el("r", "div", Map.of(), Map.of(), List.of(), null);
+        VNode b = el("r", "section", Map.of(), Map.of(), List.of(), null);
+        List<Patch> patches = Differ.diff(a, b);
+        assertEquals(1, patches.size());
+        assertTrue(patches.get(0) instanceof Patch.Replace);
+    }
+
+    @Test
+    void textToElementProducesReplace() {
+        VNode a = el("r", "div", Map.of(), Map.of(), List.of(txt("r.0", "x")), null);
+        VNode b = el("r", "div", Map.of(), Map.of(),
+                List.of(el("r.0", "span", Map.of(), Map.of(), List.of(), null)), null);
+        List<Patch> patches = Differ.diff(a, b);
+        assertEquals(1, patches.size());
+        assertTrue(patches.get(0) instanceof Patch.Replace);
+    }
+
+    @Test
+    void childInserted() {
+        VNode a = el("r", "div", Map.of(), Map.of(), List.of(txt("r.0", "a")), null);
+        VNode b = el("r", "div", Map.of(), Map.of(),
+                List.of(txt("r.0", "a"), txt("r.1", "b")), null);
+        List<Patch> patches = Differ.diff(a, b);
+        assertEquals(1, patches.size());
+        assertTrue(patches.get(0) instanceof Patch.Insert);
+    }
+
+    @Test
+    void childRemoved() {
+        VNode a = el("r", "div", Map.of(), Map.of(),
+                List.of(txt("r.0", "a"), txt("r.1", "b")), null);
+        VNode b = el("r", "div", Map.of(), Map.of(), List.of(txt("r.0", "a")), null);
+        List<Patch> patches = Differ.diff(a, b);
+        assertEquals(1, patches.size());
+        assertTrue(patches.get(0) instanceof Patch.Remove);
+    }
+
+    @Test
+    void keyedReorderDoesNotRecreate() {
+        VNode.VElement i1 = el("r[1]", "li", Map.of(), Map.of(), List.of(txt("r[1].0", "one")), "1");
+        VNode.VElement i2 = el("r[2]", "li", Map.of(), Map.of(), List.of(txt("r[2].0", "two")), "2");
+        VNode a = el("r", "ul", Map.of(), Map.of(), List.of(i1, i2), null);
+        VNode b = el("r", "ul", Map.of(), Map.of(), List.of(i2, i1), null); // reordered
+        List<Patch> patches = Differ.diff(a, b);
+        // Same keys present in both -> matched by key -> no insert/remove for the items
+        assertTrue(patches.stream().noneMatch(p -> p instanceof Patch.Insert));
+        assertTrue(patches.stream().noneMatch(p -> p instanceof Patch.Remove));
+    }
+
+    @Test
+    void keyedItemAddedProducesInsert() {
+        VNode.VElement i1 = el("r[1]", "li", Map.of(), Map.of(), List.of(), "1");
+        VNode.VElement i2 = el("r[2]", "li", Map.of(), Map.of(), List.of(), "2");
+        VNode a = el("r", "ul", Map.of(), Map.of(), List.of(i1), null);
+        VNode b = el("r", "ul", Map.of(), Map.of(), List.of(i1, i2), null);
+        List<Patch> patches = Differ.diff(a, b);
+        assertTrue(patches.stream().anyMatch(p -> p instanceof Patch.Insert));
+    }
+}

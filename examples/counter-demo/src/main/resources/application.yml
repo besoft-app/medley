@@ -1,0 +1,14 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: medley-counter-demo
+
+medley:
+  websocket-path: /medley/ws
+  template-location: templates/medley/
+
+logging:
+  level:
+    app.besoft.medley: DEBUG
