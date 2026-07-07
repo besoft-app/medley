@@ -18,4 +18,5 @@ dependencies {
     annotationProcessor(libs.spring.boot.configuration.processor)
 
     testImplementation(libs.junit.jupiter)
+    testImplementation(libs.spring.boot.starter.test)
 }
