@@ -3,14 +3,12 @@ package app.besoft.medley.spring;
 import app.besoft.medley.core.component.Component;
 import app.besoft.medley.core.component.ComponentInstance;
 
-import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.function.ServerRequest;
+import org.springframework.web.servlet.function.ServerResponse;
 
 /**
  * Serves the first page load (server-side rendering).
@@ -18,8 +16,14 @@ import org.springframework.web.bind.annotation.RestController;
  * <p>Flow: resolve the route to a component class, create a fresh bean, mount it in the
  * session, render its initial HTML, and wrap it in a shell that loads {@code medley.js}.
  * The client then opens the WebSocket and hydrates the already-rendered DOM.</p>
+ *
+ * <p>This is a plain handler, not a {@code @RequestMapping} controller: the auto-configuration
+ * registers a {@link org.springframework.web.servlet.function.RouterFunction} that binds this
+ * handler to the <em>exact</em> paths declared by {@code @MedleyRoute}. Binding exact paths
+ * (rather than a {@code /**} catch-all) is deliberate — a catch-all shadows the framework's own
+ * assets ({@code /medley/medley.js}) and the WebSocket handshake ({@code /medley/ws}) under
+ * content negotiation.</p>
  */
-@RestController
 public class MedleyController {
 
     private final RouteRegistry routes;
@@ -32,17 +36,18 @@ public class MedleyController {
         this.properties = properties;
     }
 
-    @GetMapping(path = "/**", produces = MediaType.TEXT_HTML_VALUE)
-    public ResponseEntity<String> render(HttpServletRequest request) {
-        String path = request.getRequestURI();
+    /** Render the Medley component mapped to this request's path. */
+    public ServerResponse render(ServerRequest request) {
+        String path = request.path();
         Class<? extends Component> compClass = routes.resolve(path);
         if (compClass == null) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+            // With exact-path routing this branch is defensive; unmapped paths never reach here.
+            return ServerResponse.status(HttpStatus.NOT_FOUND)
                     .contentType(MediaType.TEXT_HTML)
                     .body(notFound(path));
         }
 
-        HttpSession httpSession = request.getSession(true);
+        HttpSession httpSession = request.servletRequest().getSession(true);
         MedleySession session = sessionFor(httpSession);
 
         String componentId = "root";
@@ -50,7 +55,7 @@ public class MedleyController {
         ComponentInstance instance = session.mount(componentId, component);
         String bodyHtml = instance.renderInitialHtml();
 
-        return ResponseEntity.ok()
+        return ServerResponse.ok()
                 .contentType(MediaType.TEXT_HTML)
                 .body(shell(bodyHtml));
     }

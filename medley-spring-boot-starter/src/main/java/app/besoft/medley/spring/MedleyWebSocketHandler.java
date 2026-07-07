@@ -8,7 +8,10 @@ import java.util.Map;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
@@ -26,6 +29,8 @@ import org.springframework.web.socket.handler.TextWebSocketHandler;
  * by the container, and we synchronize on the session, so the render loop stays deterministic.</p>
  */
 public class MedleyWebSocketHandler extends TextWebSocketHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(MedleyWebSocketHandler.class);
 
     private final ObjectMapper mapper;
     private final PatchEncoder encoder;
@@ -60,7 +65,17 @@ public class MedleyWebSocketHandler extends TextWebSocketHandler {
                 wsSession.sendMessage(new TextMessage("{\"op\":\"reload\"}"));
                 return;
             }
-            List<Patch> patches = instance.invokeAction(action, args);
+            List<Patch> patches;
+            try {
+                patches = instance.invokeAction(action, args);
+            } catch (RuntimeException e) {
+                // Unknown/failed action: log server-side (the client only gets a generic message)
+                // and keep the socket open. Only invokeAction is guarded, so a serialization/
+                // transport failure below is not misreported as an action failure.
+                log.warn("Medley action '{}' on component '{}' failed", action, componentId, e);
+                sendError(wsSession, "Action '" + action + "' failed");
+                return;
+            }
             wsSession.sendMessage(new TextMessage(encoder.encode(patches)));
         }
     }
@@ -87,7 +102,10 @@ public class MedleyWebSocketHandler extends TextWebSocketHandler {
     }
 
     private void sendError(WebSocketSession wsSession, String message) throws Exception {
-        wsSession.sendMessage(new TextMessage("{\"op\":\"error\",\"message\":\"" + message + "\"}"));
+        ObjectNode n = mapper.createObjectNode();
+        n.put("op", "error");
+        n.put("message", message);
+        wsSession.sendMessage(new TextMessage(mapper.writeValueAsString(n)));
     }
 
     @Override
