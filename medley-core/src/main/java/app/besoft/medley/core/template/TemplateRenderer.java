@@ -24,6 +24,10 @@ import java.util.Map;
  */
 public final class TemplateRenderer {
 
+    /** Client-owned region: rendered as an opaque, childless host so the differ never touches
+     *  its client-managed internals (see {@link #renderSingleElement}). */
+    private static final String ISLAND_TAG = "medley-island";
+
     private final TemplateNode.Element root;
 
     public TemplateRenderer(TemplateNode.Element root) {
@@ -122,13 +126,18 @@ public final class TemplateRenderer {
             attrs.put(e.getKey(), eval.evalString(e.getValue()));
         }
 
-        // children with positional ids
+        // children with positional ids. A <medley-island> is a client-owned region: it renders
+        // as a childless host (props are attributes) so the differ only ever patches its host
+        // attributes and never diffs/replaces its client-managed internal DOM. Any template
+        // children of an island are intentionally ignored server-side.
         List<VNode> children = new ArrayList<>();
-        int childPos = 0;
-        for (TemplateNode childTemplate : el.children()) {
-            String childId = id + "." + childPos;
-            children.addAll(renderNode(childTemplate, childId, ctx));
-            childPos++;
+        if (!ISLAND_TAG.equals(el.tag())) {
+            int childPos = 0;
+            for (TemplateNode childTemplate : el.children()) {
+                String childId = id + "." + childPos;
+                children.addAll(renderNode(childTemplate, childId, ctx));
+                childPos++;
+            }
         }
 
         return new VNode.VElement(
