@@ -131,6 +131,7 @@
       case "replace": {
         const node = byMedleyId(p.id);
         if (node) {
+          unmountIslandsIn(node);
           const fresh = htmlToElement(p.html);
           node.replaceWith(fresh);
           hydrateTree(fresh);
@@ -149,7 +150,10 @@
       }
       case "remove": {
         const node = byMedleyId(p.id);
-        if (node) node.remove();
+        if (node) {
+          unmountIslandsIn(node);
+          node.remove();
+        }
         break;
       }
       default:
@@ -217,43 +221,118 @@
     }
   }
 
-  // ---- islands (client-only Web Components) ---------------------------------
-  // <medley-island name="x" ...> is upgraded to a custom element <medley-x> if registered.
-  // Islands manage their own DOM and never round-trip per interaction; they may call
-  // window.medley.islandCommit(id, state) to persist coarse-grained state on the server.
-  function mountIslands(root) {
-    const scope = root.querySelectorAll ? root : document;
-    const islands = scope.querySelectorAll("medley-island");
-    islands.forEach(function (host) {
-      if (host.__medleyMounted) return;
-      const name = host.getAttribute("name");
-      const ctor = islandRegistry[name];
-      if (!ctor) return; // no client implementation registered; leave as inert placeholder
-      host.__medleyMounted = true;
-      try {
-        ctor(host);
-      } catch (e) {
-        console.error("[medley] island '" + name + "' failed to mount", e);
-      }
-    });
+  // ---- islands (client-owned regions) ---------------------------------------
+  // A <medley-island name="x" ...> host is claimed by the island class registered for "x".
+  // The island owns its subtree and never round-trips per interaction. It may call
+  // this.commit(action, payload) to persist a coarse result on the server (-> @IslandAction),
+  // and it receives server prop pushes via onProp(name, value) when the host's attributes change
+  // (the server pushes props as a plain attribute patch on the host).
+
+  // Base class developers extend. Subclass and override mount()/onProp()/unmount().
+  class MedleyIsland {
+    constructor(host) { this.host = host; }
+    get islandName() { return this.host.getAttribute("name"); }
+    get islandId() { return this.host.getAttribute("data-medley-id"); }
+    /** Read a prop (host attribute); returns null if absent. */
+    prop(name) { return this.host.getAttribute(name); }
+    /** Lifecycle hooks — override as needed. */
+    mount() {}
+    onProp(_name, _value) {}
+    unmount() {}
+    /** Persist coarse state to the server; routed to a @IslandAction on the owning component. */
+    commit(action, payload) { islandCommit(this, action, payload); }
   }
 
   const islandRegistry = Object.create(null);
 
-  function registerIsland(name, mountFn) {
-    islandRegistry[name] = mountFn;
+  function mountIslands(root) {
+    const scope = (root && root.querySelectorAll) ? root : document;
+    scope.querySelectorAll("medley-island").forEach(mountIsland);
+    if (root && root.matches && root.matches("medley-island")) mountIsland(root);
+  }
+
+  function mountIsland(host) {
+    if (host.__medleyMounted) return;
+    const name = host.getAttribute("name");
+    const ctor = islandRegistry[name];
+    if (!ctor) return; // no client implementation registered yet; stays an inert placeholder
+    host.__medleyMounted = true;
+    try {
+      const instance = new ctor(host);
+      host.__medleyIsland = instance;
+      observeProps(host, instance);
+      instance.mount();
+    } catch (e) {
+      console.error("[medley] island '" + name + "' failed to mount", e);
+      // Fully tear down so a later pass can retry cleanly (no leaked observer/instance).
+      teardownIsland(host, false);
+    }
+  }
+
+  // Turn server prop-pushes (attribute patches on the host) into onProp() calls. We compare
+  // against the old value so a no-op setAttribute (or an attribute the island writes to its own
+  // host) does not trigger a spurious onProp / feedback loop.
+  function observeProps(host, instance) {
+    const observer = new MutationObserver(function (mutations) {
+      for (const m of mutations) {
+        if (m.type !== "attributes") continue;
+        const value = host.getAttribute(m.attributeName);
+        if (value !== m.oldValue) instance.onProp(m.attributeName, value);
+      }
+    });
+    observer.observe(host, { attributes: true, attributeOldValue: true });
+    host.__medleyPropObserver = observer;
+  }
+
+  // Release an island host's instance and observer. callUnmount=false when mount() itself failed
+  // (the island never fully mounted, so don't invoke its unmount()).
+  function teardownIsland(host, callUnmount) {
+    if (callUnmount && host.__medleyIsland) {
+      try { host.__medleyIsland.unmount(); } catch (e) { console.error("[medley] island unmount failed", e); }
+    }
+    if (host.__medleyPropObserver) {
+      host.__medleyPropObserver.disconnect();
+      host.__medleyPropObserver = null;
+    }
+    host.__medleyMounted = false;
+    host.__medleyIsland = null;
+  }
+
+  // Tear down islands in a subtree before it is removed/replaced, so state and observers are freed.
+  function unmountIslandsIn(node) {
+    if (!node) return;
+    const hosts = [];
+    if (node.__medleyIsland) hosts.push(node);
+    if (node.querySelectorAll) {
+      node.querySelectorAll("medley-island").forEach(function (h) {
+        if (h.__medleyIsland) hosts.push(h);
+      });
+    }
+    hosts.forEach(function (h) { teardownIsland(h, true); });
+  }
+
+  function registerIsland(name, islandClass) {
+    islandRegistry[name] = islandClass;
     // Mount any already-present hosts for this island.
     mountIslands(document);
   }
 
-  function islandCommit(islandId, state) {
-    sendEvent(ROOT_ID, "__island:" + islandId, [JSON.stringify(state)]);
+  function islandCommit(island, action, payload) {
+    if (!socket || socket.readyState !== WebSocket.OPEN) return;
+    socket.send(JSON.stringify({
+      type: "island-commit",
+      componentId: ownerComponentId(island.host),
+      island: island.islandName,
+      id: island.islandId,
+      action: action,
+      payload: payload || {}
+    }));
   }
 
   // ---- public API + bootstrap ----------------------------------------------
   window.medley = {
+    MedleyIsland: MedleyIsland,
     registerIsland: registerIsland,
-    islandCommit: islandCommit,
     _sendEvent: sendEvent
   };
 

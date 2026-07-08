@@ -66,4 +66,13 @@ class MedleySsrTest {
     void unmappedPathReturns404() throws Exception {
         mvc.perform(get("/no-such-route")).andExpect(status().isNotFound());
     }
+
+    @Test
+    void islandRendersAsChildlessHostWithProps() throws Exception {
+        mvc.perform(get("/island"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("<medley-island")))
+                .andExpect(content().string(containsString("name=\"ticker\"")))
+                .andExpect(content().string(containsString("data-value=\"0\"")));
+    }
 }

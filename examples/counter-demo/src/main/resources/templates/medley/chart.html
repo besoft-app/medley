@@ -1,0 +1,6 @@
+<div class="chart">
+  <medley-island name="sparkline" :data-points="pointsCsv" :data-selected="selected"></medley-island>
+  <p>Wybrany: {{ selectedLabel }}</p>
+  <button @click="clearSelection" *if="hasSelection">wyczyść</button>
+  <script src="/sparkline-island.js"></script>
+</div>
