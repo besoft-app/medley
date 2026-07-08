@@ -18,6 +18,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.beans.factory.support.DefaultListableBeanFactory;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 
@@ -36,7 +37,9 @@ class MedleyWebSocketHandlerTest {
 
     @BeforeEach
     void setUp() {
-        handler = new MedleyWebSocketHandler(mapper, new PatchEncoder(mapper));
+        // Empty island registry: these tests exercise component actions, not island commits.
+        IslandRegistry islands = new IslandRegistry(new DefaultListableBeanFactory(), mapper);
+        handler = new MedleyWebSocketHandler(mapper, new PatchEncoder(mapper), islands);
         templates = new TemplateRegistry("templates/medley/");
     }
 

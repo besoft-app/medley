@@ -20,10 +20,16 @@ import org.springframework.web.socket.handler.TextWebSocketHandler;
 /**
  * Handles the Medley WebSocket channel.
  *
- * <p>Incoming message: {@code {"componentId": "...", "action": "...", "args": [...]}}.
- * The handler looks up the live component in the HTTP-session-bound {@link MedleySession},
- * invokes the named {@code @Action} (whitelisted server-side), and writes back the resulting
- * patch list as JSON.</p>
+ * <p>Two inbound message shapes, disambiguated by a top-level {@code type}:
+ * <ul>
+ *   <li>a component action (no {@code type}):
+ *       {@code {"componentId":"...","action":"...","args":[...]}} — invokes the named
+ *       {@code @Action} on the live component;</li>
+ *   <li>an island commit: {@code {"type":"island-commit","componentId":"...","island":"...",
+ *       "action":"...","payload":{...}}} — dispatches to a {@code @IslandAction}, which mutates
+ *       the owning component.</li>
+ * </ul>
+ * Both then re-render the owning component and write back the resulting patch array as JSON.</p>
  *
  * <p>Per-session ordering: messages on a single WebSocket session are delivered sequentially
  * by the container, and we synchronize on the session, so the render loop stays deterministic.</p>
@@ -34,10 +40,12 @@ public class MedleyWebSocketHandler extends TextWebSocketHandler {
 
     private final ObjectMapper mapper;
     private final PatchEncoder encoder;
+    private final IslandRegistry islands;
 
-    public MedleyWebSocketHandler(ObjectMapper mapper, PatchEncoder encoder) {
+    public MedleyWebSocketHandler(ObjectMapper mapper, PatchEncoder encoder, IslandRegistry islands) {
         this.mapper = mapper;
         this.encoder = encoder;
+        this.islands = islands;
     }
 
     @Override
@@ -49,6 +57,11 @@ public class MedleyWebSocketHandler extends TextWebSocketHandler {
         }
 
         JsonNode msg = mapper.readTree(message.getPayload());
+        if ("island-commit".equals(msg.path("type").asText(null))) {
+            handleIslandCommit(wsSession, medley, msg);
+            return;
+        }
+
         String componentId = msg.path("componentId").asText(null);
         String action = msg.path("action").asText(null);
         if (componentId == null || action == null) {
@@ -74,6 +87,43 @@ public class MedleyWebSocketHandler extends TextWebSocketHandler {
                 // transport failure below is not misreported as an action failure.
                 log.warn("Medley action '{}' on component '{}' failed", action, componentId, e);
                 sendError(wsSession, "Action '" + action + "' failed");
+                return;
+            }
+            wsSession.sendMessage(new TextMessage(encoder.encode(patches)));
+        }
+    }
+
+    /**
+     * Dispatch an island commit to a {@code @IslandAction} on the owning component, then push the
+     * component's re-render (a changed bound prop surfaces as a host-attribute patch on the island).
+     */
+    private void handleIslandCommit(WebSocketSession wsSession, MedleySession medley, JsonNode msg)
+            throws Exception {
+        String componentId = msg.path("componentId").asText(null);
+        String island = msg.path("island").asText(null);
+        String action = msg.path("action").asText(null);
+        // msg."id" (the island host's data-medley-id) is sent by the client and reserved for
+        // future multi-instance targeting; dispatch today routes by componentId + island name.
+        if (componentId == null || island == null || action == null) {
+            sendError(wsSession, "island-commit must contain componentId, island and action");
+            return;
+        }
+        JsonNode payload = msg.get("payload");
+
+        synchronized (wsSession) {
+            ComponentInstance instance = medley.get(componentId);
+            if (instance == null) {
+                wsSession.sendMessage(new TextMessage("{\"op\":\"reload\"}"));
+                return;
+            }
+            List<Patch> patches;
+            try {
+                islands.invoke(island, action, instance.component(), payload);
+                patches = instance.renderToPatches();
+            } catch (RuntimeException e) {
+                log.warn("Medley island commit '{}.{}' on component '{}' failed",
+                        island, action, componentId, e);
+                sendError(wsSession, "Island commit '" + island + "." + action + "' failed");
                 return;
             }
             wsSession.sendMessage(new TextMessage(encoder.encode(patches)));

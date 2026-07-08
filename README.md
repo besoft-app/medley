@@ -113,22 +113,24 @@ Składnia szablonu: `{{ expr }}` interpolacja · `@event="action"` zdarzenie →
 
 ## Wyspy klienckie (hybryda)
 
-`<medley-island name="x">` to granica, za którą serwer nie zarządza DOM. Rejestracja po
-stronie klienta:
+`<medley-island name="x">` to granica, za którą serwer nie zarządza DOM. Deweloper rozszerza bazę
+`window.medley.MedleyIsland` i rejestruje klasę:
 
 ```js
-window.medley.registerIsland("sparkline", function (host) {
-  // host to element <medley-island>; renderuj cokolwiek, zero round-tripów
-  // aby utrwalić stan na serwerze: window.medley.islandCommit(id, state)
-});
+class Sparkline extends window.medley.MedleyIsland {
+  mount()           { /* renderuj lokalnie; obsłuż interakcje, zero round-tripów */ }
+  onProp(name, val) { /* serwer wypchnął props (patch atrybutu hosta) */ }
+  // this.commit(action, payload) — utrwal gruboziarnisty stan na serwerze
+}
+window.medley.registerIsland("sparkline", Sparkline);
 ```
 
-Wyspa działa autonomicznie; serwer dostaje tylko rzadkie zdarzenia `commit`. To realizuje
-cel „mało stanu na serwerze" dla interakcji wysokiej częstotliwości.
-
-> Uwaga: w tym PoC obsługa wysp po stronie serwera (`@IslandAction`) jest zarysowana w
-> design docu, ale nie zaimplementowana — `medley.js` ma już komplet API (`registerIsland`,
-> `islandCommit`). To naturalny następny etap.
+Po stronie serwera: `@MedleyIsland("sparkline")` z metodami `@IslandAction` (moduł starter).
+`this.commit(action, payload)` wysyła wiadomość `island-commit`, która mutuje `@State`
+komponentu-właściciela; jego re-render wypycha zmienione props z powrotem na host. Wyspa działa
+autonomicznie — serwer dostaje tylko rzadkie commity, co realizuje cel „mało stanu na serwerze"
+dla interakcji wysokiej częstotliwości. Działający przykład: wyspa **sparkline** w
+`examples/counter-demo` (trasa `/chart`).
 
 ---
 
@@ -136,19 +138,19 @@ cel „mało stanu na serwerze" dla interakcji wysokiej częstotliwości.
 
 | Element | Status |
 |---|---|
-| VNode + parser szablonu + evaluator | ✅ gotowe, **54 testy** |
-| Differ + patche + serializer HTML | ✅ gotowe, **54 testy** |
-| Model komponentu (@State/@Param/@Action) | ✅ gotowe, **54 testy** |
-| medley.js (hydratacja, WS, patch, reconnect) | ✅ gotowe, **zweryfikowane live po WS** |
-| Pętla end-to-end po WebSocket | ✅ **udowodniona** (tools/dev-server) |
-| Starter: autokonfiguracja, WS, SSR, sesja, routing | ✅ kod gotowy¹ |
-| Demo counter | ✅ gotowe |
-| Wyspy po stronie serwera (@IslandAction) | ⏳ Etap 3 |
-| Format binarny patchy, Redis dla sesji | ⏳ Etap 5 |
+| VNode + parser szablonu + evaluator | ✅ gotowe (rdzeń: **57 testów**) |
+| Differ + patche + serializer HTML | ✅ gotowe |
+| Model komponentu (@State/@Param/@Action) | ✅ gotowe |
+| medley.js (hydratacja, WS, patch, reconnect, wyspy) | ✅ gotowe |
+| Pętla end-to-end po WebSocket | ✅ **udowodniona** (tools/dev-server oraz realny Spring WS) |
+| Starter: autokonfiguracja, WS, SSR, sesja, routing (**Etap 2**) | ✅ gotowe (starter: **19 testów**) |
+| Wyspy klienckie — `MedleyIsland`/`@MedleyIsland`/`@IslandAction` (**Etap 3**) | ✅ gotowe |
+| Demo: counter (`/counter`) + sparkline island (`/chart`) | ✅ gotowe |
+| Biblioteka komponentów, walidacja, security | ⏳ Etap 4 |
+| Format binarny patchy, Redis dla sesji, metryki | ⏳ Etap 5 |
 
-¹ Rdzeń jest pokryty testami i zweryfikowany end-to-end po WebSocket (patrz niżej). Moduł
-starter nie był kompilowany w środowisku budowy (brak dostępu do repozytoriów Maven), więc
-pierwsze `./gradlew build` u Ciebie jest właściwą weryfikacją kompilacji integracji ze Spring.
+Pełny `./gradlew build` jest zielony: 3 moduły kompilują się, **57 testów rdzenia + 19 startera**
+przechodzi, a bootJar demonstracji się buduje.
 
 ---
 
@@ -158,9 +160,10 @@ pierwsze `./gradlew build` u Ciebie jest właściwą weryfikacją kompilacji int
 ./gradlew :medley-core:test
 ```
 
-54 testów jednostkowych pokrywających: evaluator wyrażeń, parser szablonów, renderer (w tym
-stabilność placeholdera `*if` i klucze `*for`), differ (w tym rekoncyliacja po kluczach),
-serializer HTML (w tym escaping XSS) oraz pełną pętlę komponentu render → akcja → diff.
+57 testów jednostkowych pokrywających: evaluator wyrażeń, parser szablonów, renderer (w tym
+stabilność placeholdera `*if`, klucze `*for` i nieprzezroczysty host `<medley-island>`), differ
+(w tym rekoncyliacja po kluczach), serializer HTML (w tym escaping XSS) oraz pełną pętlę
+komponentu render → akcja → diff.
 
 ## Weryfikacja end-to-end po WebSocket (bez Springa)
 

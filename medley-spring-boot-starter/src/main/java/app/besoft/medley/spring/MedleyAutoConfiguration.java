@@ -47,6 +47,13 @@ public class MedleyAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    public IslandRegistry medleyIslandRegistry(ConfigurableListableBeanFactory beanFactory,
+                                               ObjectMapper mapper) {
+        return new IslandRegistry(beanFactory, mapper);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
     public PatchEncoder medleyPatchEncoder(ObjectMapper mapper) {
         return new PatchEncoder(mapper);
     }
@@ -75,8 +82,9 @@ public class MedleyAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public MedleyWebSocketHandler medleyWebSocketHandler(ObjectMapper mapper, PatchEncoder encoder) {
-        return new MedleyWebSocketHandler(mapper, encoder);
+    public MedleyWebSocketHandler medleyWebSocketHandler(ObjectMapper mapper, PatchEncoder encoder,
+                                                         IslandRegistry islands) {
+        return new MedleyWebSocketHandler(mapper, encoder, islands);
     }
 
     @Bean
