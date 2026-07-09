@@ -1,0 +1,7 @@
+<div class="search-demo">
+  <h1>Medley — input-value binding</h1>
+  <p><input type="text" @input="setQuery($value)" placeholder="type to filter…"></p>
+  <p><label><input type="checkbox" @change="setCaseSensitive($checked)"> case-sensitive</label></p>
+  <p>query=<strong>{{ query }}</strong> — <span>{{ matchCount }}</span> match(es)</p>
+  <ul><li *for="fruit : matches" key="fruit">{{ fruit }}</li></ul>
+</div>
