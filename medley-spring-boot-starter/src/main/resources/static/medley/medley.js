@@ -168,23 +168,63 @@
   }
 
   // ---- event wiring (hydration) --------------------------------------------
-  // Server emits events as data-medley-on-<event>="actionName". We attach a real
-  // listener that forwards to the server. We track attached handlers to allow rewiring.
+  // Server emits events as data-medley-on-<event>="binding". The binding is either a bare action
+  // name ("increment") or a call form carrying arg specs ("setQuery($value)"). We attach a real
+  // listener that extracts the declared args from the DOM event and forwards them to the server.
+  // We track attached handlers to allow rewiring.
   const handlerRegistry = new WeakMap(); // node -> { event -> fn }
 
-  function wireEvent(node, eventName, action) {
+  // preventDefault would swallow the keystroke on keyboard events and is pointless for input/change
+  // (they fire after the value is committed). Everywhere else (click, submit, ...) we keep it so a
+  // server-driven control doesn't also trigger native navigation/submission.
+  const NO_PREVENT_DEFAULT = { input: 1, change: 1, keydown: 1, keyup: 1, keypress: 1 };
+
+  // Parse "action" or "action($value, 'literal', 3)" into { action, argSpecs }. A malformed
+  // binding degrades to a bare, argument-less action rather than throwing.
+  // KNOWN LIMITATION (Stage 4, increment 2): the arg list is split naively on "," and captured with
+  // [^)]*, so a literal containing a comma or a ")" will misparse. Keep the common cases ($value,
+  // $checked, $key, simple string/number/boolean literals); a full tokenizer is a later increment.
+  function parseBinding(binding) {
+    const m = /^\s*([A-Za-z_$][\w$]*)\s*(?:\(([^)]*)\))?\s*$/.exec(binding || "");
+    if (!m) return { action: binding, argSpecs: [] };
+    const inside = m[2];
+    if (inside == null || inside.trim() === "") return { action: m[1], argSpecs: [] };
+    const argSpecs = inside.split(",").map(function (s) { return s.trim(); })
+      .filter(function (s) { return s.length > 0; });
+    return { action: m[1], argSpecs: argSpecs };
+  }
+
+  // Resolve one arg spec against the live DOM event/target. Supported tokens: $value, $checked,
+  // $key. Anything else is treated as a literal (quoted string, number, or boolean).
+  function extractArg(spec, domEvent, node) {
+    switch (spec) {
+      case "$value": return node.value;
+      case "$checked": return !!node.checked;
+      case "$key": return domEvent.key;
+      default:
+        if (/^'.*'$/.test(spec) || /^".*"$/.test(spec)) return spec.slice(1, -1);
+        if (spec === "true") return true;
+        if (spec === "false") return false;
+        if (/^-?\d+(?:\.\d+)?$/.test(spec)) return Number(spec);
+        return spec; // unknown token — send verbatim as a string
+    }
+  }
+
+  function wireEvent(node, eventName, binding) {
     let map = handlerRegistry.get(node);
     if (!map) { map = {}; handlerRegistry.set(node, map); }
     if (map[eventName]) node.removeEventListener(eventName, map[eventName]);
 
+    const parsed = parseBinding(binding);
     const fn = function (domEvent) {
-      domEvent.preventDefault();
+      if (!NO_PREVENT_DEFAULT[eventName]) domEvent.preventDefault();
       const componentId = ownerComponentId(node);
-      sendEvent(componentId, action, []);
+      const args = parsed.argSpecs.map(function (s) { return extractArg(s, domEvent, node); });
+      sendEvent(componentId, parsed.action, args);
     };
     map[eventName] = fn;
     node.addEventListener(eventName, fn);
-    node.setAttribute("data-medley-on-" + eventName, action);
+    node.setAttribute("data-medley-on-" + eventName, binding);
   }
 
   function unwireEvent(node, eventName) {

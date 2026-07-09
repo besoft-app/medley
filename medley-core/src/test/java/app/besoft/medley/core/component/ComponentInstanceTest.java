@@ -32,6 +32,21 @@ class ComponentInstanceTest {
         </div>
         """;
 
+    /** Typed actions exercise value-binding: the client always sends args as JSON scalars, and the
+        core must coerce each to the {@code @Action}'s declared parameter type. */
+    @Annotations.MedleyComponent("form")
+    static class Form extends Component {
+        @Annotations.State String query = "";
+        @Annotations.State boolean active = false;
+        @Annotations.State int qty = 0;
+        @Annotations.Action void setQuery(String value) { this.query = value; }
+        @Annotations.Action void setActive(boolean checked) { this.active = checked; }
+        @Annotations.Action void setQty(int value) { this.qty = value; }
+    }
+
+    // Whitespace-tight so a query change is a single text patch on the label.
+    private static final String TPL_FORM = "<div><span>{{ query }}</span></div>";
+
     private ComponentInstance newCounter() {
         return new ComponentInstance("root", new Counter(), TemplateRenderer.of(TPL));
     }
@@ -90,6 +105,67 @@ class ComponentInstanceTest {
         ComponentInstance inst = newCounter();
         inst.renderInitialHtml();
         assertThrows(TemplateException.class, () -> inst.invokeAction("nonexistent"));
+    }
+
+    @Test
+    void stringArgFromClientCoercesToIntParam() {
+        // A text/number input sends its value as a JSON string; setQty declares int.
+        Form f = new Form();
+        ComponentInstance inst = new ComponentInstance("root", f, TemplateRenderer.of(TPL_FORM));
+        inst.renderInitialHtml();
+        inst.invokeAction("setQty", "3");
+        assertEquals(3, f.qty, "String '3' must coerce to int param");
+    }
+
+    @Test
+    void stringArgFromClientCoercesToBooleanParam() {
+        Form f = new Form();
+        ComponentInstance inst = new ComponentInstance("root", f, TemplateRenderer.of(TPL_FORM));
+        inst.renderInitialHtml();
+        inst.invokeAction("setActive", "true");
+        assertTrue(f.active, "String 'true' must coerce to boolean param");
+    }
+
+    @Test
+    void realBooleanArgPassesThroughToBooleanParam() {
+        // A checkbox sends $checked as a real JSON boolean; it must not be lost in coercion.
+        Form f = new Form();
+        ComponentInstance inst = new ComponentInstance("root", f, TemplateRenderer.of(TPL_FORM));
+        inst.renderInitialHtml();
+        inst.invokeAction("setActive", Boolean.TRUE);
+        assertTrue(f.active);
+    }
+
+    @Test
+    void valueBindingUpdatesLabelInSinglePatch() {
+        // Uncontrolled input: value feeds @State, a {{ query }} label echoes it. Steady-state
+        // typing must stay minimal — exactly one text patch on the label, never on the input.
+        Form f = new Form();
+        ComponentInstance inst = new ComponentInstance("root", f, TemplateRenderer.of(TPL_FORM));
+        inst.renderInitialHtml();
+        inst.invokeAction("setQuery", "ab");
+        List<Patch> patches = inst.invokeAction("setQuery", "cd");
+        assertEquals(1, patches.size(), "steady-state value binding must be a single patch");
+        assertTrue(patches.get(0) instanceof Patch.SetText);
+        assertEquals("cd", ((Patch.SetText) patches.get(0)).value());
+        assertEquals("cd", f.query);
+    }
+
+    @Test
+    void arityMismatchThrows() {
+        Form f = new Form();
+        ComponentInstance inst = new ComponentInstance("root", f, TemplateRenderer.of(TPL_FORM));
+        inst.renderInitialHtml();
+        // setQuery declares one param; sending none is a handled failure, not a crash.
+        assertThrows(TemplateException.class, () -> inst.invokeAction("setQuery"));
+    }
+
+    @Test
+    void unparseableValueThrows() {
+        Form f = new Form();
+        ComponentInstance inst = new ComponentInstance("root", f, TemplateRenderer.of(TPL_FORM));
+        inst.renderInitialHtml();
+        assertThrows(TemplateException.class, () -> inst.invokeAction("setQty", "not-a-number"));
     }
 
     @Test
