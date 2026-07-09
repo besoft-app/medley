@@ -4,8 +4,9 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 /**
  * Minimal Spring Boot application for starter tests. Component-scans only this {@code fixtures}
- * package (so exactly one routed component, {@link TestCounterComponent}, is discovered) and
- * pulls in {@code MedleyAutoConfiguration} via {@code @EnableAutoConfiguration}.
+ * package (routed components {@link TestCounterComponent} /counter, {@link IslandHostComponent}
+ * /island, {@link TableHostComponent} /table, plus the {@link TickerIsland} handler) and pulls in
+ * {@code MedleyAutoConfiguration} via {@code @EnableAutoConfiguration}.
  */
 @SpringBootApplication
 public class TestApplication {
