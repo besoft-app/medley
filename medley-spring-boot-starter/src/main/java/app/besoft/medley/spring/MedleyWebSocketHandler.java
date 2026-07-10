@@ -2,6 +2,7 @@ package app.besoft.medley.spring;
 
 import app.besoft.medley.core.component.ComponentInstance;
 import app.besoft.medley.core.diff.Patch;
+import app.besoft.medley.core.diff.PatchMerge;
 
 import java.util.List;
 import java.util.Map;
@@ -80,7 +81,11 @@ public class MedleyWebSocketHandler extends TextWebSocketHandler {
             }
             List<Patch> patches;
             try {
+                medley.resetRenderCycle();
                 patches = instance.invokeAction(action, args);
+                // Props-down cascade (4b.3a): append patches from children whose bound params changed
+                // during this render. The opaque boundary keeps invokeAction from also emitting them.
+                patches = PatchMerge.mergeWithSuppression(patches, medley.drainCascade());
             } catch (RuntimeException e) {
                 // Unknown/failed action: log server-side (the client only gets a generic message)
                 // and keep the socket open. Only invokeAction is guarded, so a serialization/
@@ -118,8 +123,10 @@ public class MedleyWebSocketHandler extends TextWebSocketHandler {
             }
             List<Patch> patches;
             try {
+                medley.resetRenderCycle();
                 islands.invoke(island, action, instance.component(), payload);
                 patches = instance.renderToPatches();
+                patches = PatchMerge.mergeWithSuppression(patches, medley.drainCascade());
             } catch (RuntimeException e) {
                 log.warn("Medley island commit '{}.{}' on component '{}' failed",
                         island, action, componentId, e);
