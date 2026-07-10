@@ -84,7 +84,7 @@ public final class ComponentInstance {
         }
         Object[] coerced = new Object[args.length];
         for (int i = 0; i < args.length; i++) {
-            coerced[i] = coerce(args[i], paramTypes[i], actionName);
+            coerced[i] = Coercions.coerce(args[i], paramTypes[i]);
         }
         try {
             m.setAccessible(true);
@@ -93,46 +93,5 @@ public final class ComponentInstance {
             throw new TemplateException("Action '" + actionName + "' failed", e);
         }
         return renderToPatches();
-    }
-
-    /**
-     * Lenient coercion of a client-supplied scalar to a declared parameter type, driven by the
-     * {@code @Action} signature. Handles String, the boxed/primitive numeric types and boolean.
-     * A value that cannot be parsed to the target throws a {@link TemplateException}, which the
-     * transport reports as a handled action failure while keeping the socket open.
-     */
-    private static Object coerce(Object value, Class<?> target, String actionName) {
-        if (value == null || target.isInstance(value)) {
-            return value;
-        }
-        if (target == String.class) {
-            return value.toString();
-        }
-        if (value instanceof Number n) {
-            if (target == int.class || target == Integer.class) return n.intValue();
-            if (target == long.class || target == Long.class) return n.longValue();
-            if (target == double.class || target == Double.class) return n.doubleValue();
-            if (target == float.class || target == Float.class) return n.floatValue();
-            if (target == short.class || target == Short.class) return n.shortValue();
-            if (target == byte.class || target == Byte.class) return n.byteValue();
-        }
-        if (value instanceof Boolean b && (target == boolean.class || target == Boolean.class)) {
-            return b;
-        }
-        String s = value.toString().trim();
-        try {
-            if (target == int.class || target == Integer.class) return Integer.valueOf(s);
-            if (target == long.class || target == Long.class) return Long.valueOf(s);
-            if (target == double.class || target == Double.class) return Double.valueOf(s);
-            if (target == float.class || target == Float.class) return Float.valueOf(s);
-            if (target == short.class || target == Short.class) return Short.valueOf(s);
-            if (target == byte.class || target == Byte.class) return Byte.valueOf(s);
-            if (target == boolean.class || target == Boolean.class) return Boolean.valueOf(s);
-        } catch (NumberFormatException e) {
-            throw new TemplateException("Action '" + actionName + "': cannot coerce '" + s
-                    + "' to " + target.getSimpleName());
-        }
-        // Unknown target type — pass the raw value through and let the invoke fail if incompatible.
-        return value;
     }
 }

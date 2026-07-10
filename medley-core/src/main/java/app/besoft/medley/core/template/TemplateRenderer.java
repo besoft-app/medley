@@ -29,28 +29,41 @@ public final class TemplateRenderer {
     private static final String ISLAND_TAG = "medley-island";
     /** Reusable template fragment expanded inline into the owner tree (see {@link #expandPartial}). */
     private static final String PARTIAL_TAG = "medley-partial";
-    /** Guards against a partial that (transitively) includes itself. */
+    /** Nested child component boundary (see {@link #expandComponent}). */
+    private static final String COMPONENT_TAG = "medley-component";
+    /** Guards against a partial or component that (transitively) includes itself. */
     private static final int MAX_PARTIAL_DEPTH = 32;
 
     private final TemplateNode.Element root;
     /** Resolves {@code <medley-partial>} fragments; null when partials are unsupported (e.g. tests). */
     private final PartialResolver partials;
+    /** Creates {@code <medley-component>} children; null when nested components are unsupported. */
+    private final ChildComponentFactory children;
 
     public TemplateRenderer(TemplateNode.Element root) {
-        this(root, null);
+        this(root, null, null);
     }
 
     public TemplateRenderer(TemplateNode.Element root, PartialResolver partials) {
+        this(root, partials, null);
+    }
+
+    public TemplateRenderer(TemplateNode.Element root, PartialResolver partials, ChildComponentFactory children) {
         this.root = root;
         this.partials = partials;
+        this.children = children;
     }
 
     public static TemplateRenderer of(String template) {
-        return new TemplateRenderer(TemplateParser.parse(template), null);
+        return new TemplateRenderer(TemplateParser.parse(template), null, null);
     }
 
     public static TemplateRenderer of(String template, PartialResolver partials) {
-        return new TemplateRenderer(TemplateParser.parse(template), partials);
+        return new TemplateRenderer(TemplateParser.parse(template), partials, null);
+    }
+
+    public static TemplateRenderer of(String template, PartialResolver partials, ChildComponentFactory children) {
+        return new TemplateRenderer(TemplateParser.parse(template), partials, children);
     }
 
     /**
@@ -60,7 +73,13 @@ public final class TemplateRenderer {
      * @param context     the component instance whose state the template reads
      */
     public VNode render(String componentId, Object context) {
-        List<VNode> nodes = renderNode(root, componentId, context, 0);
+        return render(componentId, context, 0);
+    }
+
+    /** Render starting at a given expansion depth — threaded across component/partial boundaries so
+     *  the recursion guard sees the true nesting (a child render is not a fresh depth-0 tree). */
+    VNode render(String componentId, Object context, int depth) {
+        List<VNode> nodes = renderNode(root, componentId, context, depth);
         if (nodes.size() != 1) {
             throw new TemplateException("Template root must render exactly one element");
         }
@@ -134,6 +153,9 @@ public final class TemplateRenderer {
     private VNode renderInstance(TemplateNode.Element el, String id, Object ctx, String key, int depth) {
         if (PARTIAL_TAG.equals(el.tag())) {
             return expandPartial(el, id, ctx, key, depth);
+        }
+        if (COMPONENT_TAG.equals(el.tag())) {
+            return expandComponent(el, id, ctx, key, depth);
         }
         return renderSingleElement(el, id, ctx, key, depth);
     }
@@ -222,6 +244,51 @@ public final class TemplateRenderer {
             ctx = sc.parent();
         }
         return false;
+    }
+
+    /**
+     * Expand a {@code <medley-component name="x" ...>} boundary: resolve the passed attributes to
+     * param values (static → string, {@code :attr} → evaluated against the owner), ask the factory
+     * for a fresh child (params injected, lifecycle started), and render its template at the child
+     * instance id {@code hostId + "::" + name}. The child sub-tree is wrapped in a marker host
+     * carrying {@code data-medley-cid} (the child instance id) for later action routing.
+     *
+     * <p>4b.1: the child is rendered inline under the host (display-only children). Making the host
+     * an opaque diff-leaf with independent child render/diff and non-root action routing is 4b.2.</p>
+     */
+    private VNode expandComponent(TemplateNode.Element el, String hostId, Object ctx, String key, int depth) {
+        if (children == null) {
+            throw new TemplateException("<medley-component> used but no ChildComponentFactory is configured");
+        }
+        if (depth >= MAX_PARTIAL_DEPTH) {
+            throw new TemplateException("Component nesting exceeded max depth (" + MAX_PARTIAL_DEPTH
+                    + ") — likely a recursive component");
+        }
+        String name = el.staticAttrs().get("name");
+        if (name == null || name.isBlank()) {
+            throw new TemplateException("<medley-component> requires a non-empty name attribute");
+        }
+
+        ExpressionEvaluator ownerEval = new ExpressionEvaluator(ctx);
+        Map<String, Object> params = new LinkedHashMap<>();
+        for (Map.Entry<String, String> e : el.staticAttrs().entrySet()) {
+            if (!"name".equals(e.getKey())) params.put(e.getKey(), e.getValue());
+        }
+        for (Map.Entry<String, String> e : el.boundAttrs().entrySet()) {
+            params.put(e.getKey(), ownerEval.eval(e.getValue()));
+        }
+
+        ChildComponentFactory.Child child = children.create(name, params);
+        if (child == null) {
+            throw new TemplateException("Unknown component: '" + name + "'");
+        }
+        String childId = hostId + "::" + name;
+        VNode childRoot = child.renderer().render(childId, child.component(), depth + 1);
+
+        Map<String, String> hostAttrs = new LinkedHashMap<>();
+        hostAttrs.put("name", name);
+        hostAttrs.put("data-medley-cid", childId);
+        return new VNode.VElement(hostId, COMPONENT_TAG, hostAttrs, Map.of(), List.of(childRoot), key);
     }
 
     private static Map<String, String> substituteEventParams(Map<String, String> events, Object ctx) {

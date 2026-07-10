@@ -1,6 +1,9 @@
 package app.besoft.medley.spring;
 
 import app.besoft.medley.core.component.Annotations.MedleyComponent;
+import app.besoft.medley.core.component.Component;
+import app.besoft.medley.core.component.ParamBinder;
+import app.besoft.medley.core.template.ChildComponentFactory;
 import app.besoft.medley.core.template.TemplateException;
 import app.besoft.medley.core.template.TemplateNode;
 import app.besoft.medley.core.template.TemplateParser;
@@ -29,11 +32,17 @@ import org.springframework.core.io.ClassPathResource;
 public class TemplateRegistry {
 
     private final String templateLocation;
+    private final ComponentRegistry components;
     private final Map<String, TemplateRenderer> cache = new ConcurrentHashMap<>();
     private final Map<String, TemplateNode.Element> partialCache = new ConcurrentHashMap<>();
 
     public TemplateRegistry(String templateLocation) {
+        this(templateLocation, null);
+    }
+
+    public TemplateRegistry(String templateLocation, ComponentRegistry components) {
         this.templateLocation = templateLocation.endsWith("/") ? templateLocation : templateLocation + "/";
+        this.components = components;
     }
 
     public TemplateRenderer rendererFor(Class<?> componentClass) {
@@ -53,10 +62,23 @@ public class TemplateRegistry {
         }
         try (InputStream in = resource.getInputStream()) {
             String template = new String(in.readAllBytes(), StandardCharsets.UTF_8);
-            return TemplateRenderer.of(template, this::resolvePartial);
+            return TemplateRenderer.of(template, this::resolvePartial, this::createChild);
         } catch (IOException e) {
             throw new TemplateException("Failed to read template: " + path, e);
         }
+    }
+
+    /** {@link ChildComponentFactory}: mount a fresh {@code @MedleyChild}, inject its {@code @Param}s
+     *  from the parent, start its lifecycle, and pair it with its template renderer. Null when the
+     *  name is unregistered (the renderer then raises a named {@link TemplateException}). */
+    private ChildComponentFactory.Child createChild(String name, Map<String, Object> params) {
+        Component child = components == null ? null : components.newInstance(name);
+        if (child == null) {
+            return null;
+        }
+        ParamBinder.inject(child, params);
+        child.onInit();
+        return new ChildComponentFactory.Child(child, rendererFor(child.getClass()));
     }
 
     /** {@link app.besoft.medley.core.template.PartialResolver}: parsed fragment root, or null. */
