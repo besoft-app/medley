@@ -27,15 +27,30 @@ public final class TemplateRenderer {
     /** Client-owned region: rendered as an opaque, childless host so the differ never touches
      *  its client-managed internals (see {@link #renderSingleElement}). */
     private static final String ISLAND_TAG = "medley-island";
+    /** Reusable template fragment expanded inline into the owner tree (see {@link #expandPartial}). */
+    private static final String PARTIAL_TAG = "medley-partial";
+    /** Guards against a partial that (transitively) includes itself. */
+    private static final int MAX_PARTIAL_DEPTH = 32;
 
     private final TemplateNode.Element root;
+    /** Resolves {@code <medley-partial>} fragments; null when partials are unsupported (e.g. tests). */
+    private final PartialResolver partials;
 
     public TemplateRenderer(TemplateNode.Element root) {
+        this(root, null);
+    }
+
+    public TemplateRenderer(TemplateNode.Element root, PartialResolver partials) {
         this.root = root;
+        this.partials = partials;
     }
 
     public static TemplateRenderer of(String template) {
-        return new TemplateRenderer(TemplateParser.parse(template));
+        return new TemplateRenderer(TemplateParser.parse(template), null);
+    }
+
+    public static TemplateRenderer of(String template, PartialResolver partials) {
+        return new TemplateRenderer(TemplateParser.parse(template), partials);
     }
 
     /**
@@ -45,29 +60,30 @@ public final class TemplateRenderer {
      * @param context     the component instance whose state the template reads
      */
     public VNode render(String componentId, Object context) {
-        List<VNode> nodes = renderNode(root, componentId, context);
+        List<VNode> nodes = renderNode(root, componentId, context, 0);
         if (nodes.size() != 1) {
             throw new TemplateException("Template root must render exactly one element");
         }
         return nodes.get(0);
     }
 
-    /** Returns a list because *for can expand one template node into many VNodes. */
-    private List<VNode> renderNode(TemplateNode node, String id, Object ctx) {
+    /** Returns a list because *for can expand one template node into many VNodes.
+     *  {@code depth} counts partial-expansion nesting, for the recursion guard. */
+    private List<VNode> renderNode(TemplateNode node, String id, Object ctx, int depth) {
         return switch (node) {
             case TemplateNode.Text t -> List.of(new VNode.VText(id, t.value()));
             case TemplateNode.Interpolation i -> {
                 String text = new ExpressionEvaluator(ctx).evalString(i.expr());
                 yield List.of(new VNode.VText(id, text));
             }
-            case TemplateNode.Element el -> renderElement(el, id, ctx);
+            case TemplateNode.Element el -> renderElement(el, id, ctx, depth);
         };
     }
 
-    private List<VNode> renderElement(TemplateNode.Element el, String id, Object ctx) {
+    private List<VNode> renderElement(TemplateNode.Element el, String id, Object ctx, int depth) {
         // *for expands first
         if (el.forExpr() != null) {
-            return renderForLoop(el, id, ctx);
+            return renderForLoop(el, id, ctx, depth);
         }
         // *if gates the single element. When false we still occupy exactly one slot with a
         // stable placeholder so sibling positions (and therefore ids) do not drift between
@@ -75,7 +91,7 @@ public final class TemplateRenderer {
         if (el.ifExpr() != null && !new ExpressionEvaluator(ctx).evalBoolean(el.ifExpr())) {
             return List.of(placeholder(id));
         }
-        return List.of(renderSingleElement(el, id, ctx));
+        return List.of(renderInstance(el, id, ctx, null, depth));
     }
 
     /** A zero-content, hidden element used to hold the slot of a false {@code *if}. */
@@ -89,7 +105,7 @@ public final class TemplateRenderer {
         );
     }
 
-    private List<VNode> renderForLoop(TemplateNode.Element el, String id, Object ctx) {
+    private List<VNode> renderForLoop(TemplateNode.Element el, String id, Object ctx, int depth) {
         Object iterable = new ExpressionEvaluator(ctx).eval(el.forExpr());
         if (!(iterable instanceof Iterable<?> items)) {
             throw new TemplateException("*for expression must be Iterable: " + el.forExpr());
@@ -107,17 +123,22 @@ public final class TemplateRenderer {
                     ? new ExpressionEvaluator(scope).evalString(el.keyExpr())
                     : String.valueOf(index);
             String childId = id + "[" + key + "]";
-            out.add(renderSingleElement(el, childId, scope, key));
+            out.add(renderInstance(el, childId, scope, key, depth));
             index++;
         }
         return out;
     }
 
-    private VNode renderSingleElement(TemplateNode.Element el, String id, Object ctx) {
-        return renderSingleElement(el, id, ctx, null);
+    /** One element instance: a {@code <medley-partial>} expands to its fragment; anything else
+     *  renders directly. */
+    private VNode renderInstance(TemplateNode.Element el, String id, Object ctx, String key, int depth) {
+        if (PARTIAL_TAG.equals(el.tag())) {
+            return expandPartial(el, id, ctx, key, depth);
+        }
+        return renderSingleElement(el, id, ctx, key, depth);
     }
 
-    private VNode renderSingleElement(TemplateNode.Element el, String id, Object ctx, String key) {
+    private VNode renderSingleElement(TemplateNode.Element el, String id, Object ctx, String key, int depth) {
         ExpressionEvaluator eval = new ExpressionEvaluator(ctx);
 
         // attributes: static first, then bound (bound can override)
@@ -125,6 +146,13 @@ public final class TemplateRenderer {
         for (Map.Entry<String, String> e : el.boundAttrs().entrySet()) {
             attrs.put(e.getKey(), eval.evalString(e.getValue()));
         }
+
+        // Inside a partial, an @event action name that matches a passed param is rewritten to the
+        // owner action the param carries (e.g. @click="onClick" with onClick="increment"). This
+        // resolves up the scope chain, so it still fires for events inside a *for within a partial.
+        Map<String, String> events = withinPartial(ctx)
+                ? substituteEventParams(el.events(), ctx)
+                : el.events();
 
         // children with positional ids. A <medley-island> is a client-owned region: it renders
         // as a childless host (props are attributes) so the differ only ever patches its host
@@ -135,19 +163,98 @@ public final class TemplateRenderer {
             int childPos = 0;
             for (TemplateNode childTemplate : el.children()) {
                 String childId = id + "." + childPos;
-                children.addAll(renderNode(childTemplate, childId, ctx));
+                children.addAll(renderNode(childTemplate, childId, ctx, depth));
                 childPos++;
             }
         }
 
-        return new VNode.VElement(
-                id,
-                el.tag(),
-                attrs,
-                el.events(),
-                children,
-                key
-        );
+        return new VNode.VElement(id, el.tag(), attrs, events, children, key);
+    }
+
+    /**
+     * Expand a {@code <medley-partial name="x" ...>} inline: resolve fragment x, build a local scope
+     * from the passed attributes (static → string, {@code :attr} → evaluated against the owner), and
+     * render the fragment's single root at this slot's id. Non-param references leak through to the
+     * owner context. The optional key (from a keyed {@code *for}) is attached to the fragment root.
+     */
+    private VNode expandPartial(TemplateNode.Element el, String id, Object ctx, String key, int depth) {
+        if (partials == null) {
+            throw new TemplateException("<medley-partial> used but no PartialResolver is configured");
+        }
+        if (depth >= MAX_PARTIAL_DEPTH) {
+            throw new TemplateException("Partial nesting exceeded max depth (" + MAX_PARTIAL_DEPTH
+                    + ") — likely a recursive partial");
+        }
+        String name = el.staticAttrs().get("name");
+        if (name == null || name.isBlank()) {
+            throw new TemplateException("<medley-partial> requires a non-empty name attribute");
+        }
+        TemplateNode.Element fragment = partials.resolve(name);
+        if (fragment == null) {
+            throw new TemplateException("Unknown partial: '" + name + "'");
+        }
+
+        ExpressionEvaluator ownerEval = new ExpressionEvaluator(ctx);
+        Map<String, Object> params = new LinkedHashMap<>();
+        for (Map.Entry<String, String> e : el.staticAttrs().entrySet()) {
+            if (!"name".equals(e.getKey())) params.put(e.getKey(), e.getValue());
+        }
+        for (Map.Entry<String, String> e : el.boundAttrs().entrySet()) {
+            params.put(e.getKey(), ownerEval.eval(e.getValue()));
+        }
+        ScopedContext paramScope = new ScopedContext(ctx, params, true);
+
+        List<VNode> nodes = renderNode(fragment, id, paramScope, depth + 1);
+        if (nodes.size() != 1) {
+            throw new TemplateException("Partial '" + name + "' must render exactly one root element");
+        }
+        VNode node = nodes.get(0);
+        if (key != null && node instanceof VNode.VElement ve) {
+            node = new VNode.VElement(ve.id(), ve.tag(), ve.attrs(), ve.events(), ve.children(), key);
+        }
+        return node;
+    }
+
+    /** True if {@code ctx} is a partial scope, or nests (transitively) inside one. */
+    private static boolean withinPartial(Object ctx) {
+        while (ctx instanceof ScopedContext sc) {
+            if (sc.isPartialScope()) return true;
+            ctx = sc.parent();
+        }
+        return false;
+    }
+
+    private static Map<String, String> substituteEventParams(Map<String, String> events, Object ctx) {
+        Map<String, String> out = new LinkedHashMap<>();
+        for (Map.Entry<String, String> e : events.entrySet()) {
+            out.put(e.getKey(), substituteActionName(e.getValue(), ctx));
+        }
+        return out;
+    }
+
+    /** If the binding's leading action identifier is a String local (a partial param, resolved up
+     *  the scope chain), swap in the owner action name, preserving any {@code (args)} call-syntax
+     *  from increment 2 (e.g. {@code "onChange($value)"}). */
+    private static String substituteActionName(String binding, Object ctx) {
+        int i = 0;
+        while (i < binding.length()) {
+            char c = binding.charAt(i);
+            if (Character.isLetterOrDigit(c) || c == '_' || c == '$') i++;
+            else break;
+        }
+        String ident = binding.substring(0, i);
+        return (resolveLocal(ctx, ident) instanceof String action)
+                ? action + binding.substring(i)
+                : binding;
+    }
+
+    /** Resolve a local by name up the scope chain (partial params + any enclosing loop vars). */
+    private static Object resolveLocal(Object ctx, String ident) {
+        while (ctx instanceof ScopedContext sc) {
+            if (sc.locals().containsKey(ident)) return sc.locals().get(ident);
+            ctx = sc.parent();
+        }
+        return null;
     }
 
     /**
@@ -157,19 +264,25 @@ public final class TemplateRenderer {
      */
     static final class ScopedContext {
         private final Object parent;
-        private final Map<String, Object> locals = new HashMap<>();
+        private final Map<String, Object> locals;
+        private final boolean partialScope;
 
+        /** Single loop-variable scope (used by {@code *for}). */
         ScopedContext(Object parent, String varName, Object value) {
             this.parent = parent;
+            this.locals = new HashMap<>();
             this.locals.put(varName, value);
+            this.partialScope = false;
         }
 
-        /** Used by ExpressionEvaluator via reflection through getMember. */
-        public Object getMember(String name) {
-            if (locals.containsKey(name)) return locals.get(name);
-            return parent;
+        /** Multi-local scope built from a partial's passed attributes. */
+        ScopedContext(Object parent, Map<String, Object> locals, boolean partialScope) {
+            this.parent = parent;
+            this.locals = locals;
+            this.partialScope = partialScope;
         }
 
+        boolean isPartialScope() { return partialScope; }
         Object parent() { return parent; }
         Map<String, Object> locals() { return locals; }
     }
