@@ -37,49 +37,49 @@ public final class TemplateRenderer {
     private final TemplateNode.Element root;
     /** Resolves {@code <medley-partial>} fragments; null when partials are unsupported (e.g. tests). */
     private final PartialResolver partials;
-    /** Creates {@code <medley-component>} children; null when nested components are unsupported. */
-    private final ChildComponentFactory children;
 
     public TemplateRenderer(TemplateNode.Element root) {
-        this(root, null, null);
+        this(root, null);
     }
 
     public TemplateRenderer(TemplateNode.Element root, PartialResolver partials) {
-        this(root, partials, null);
-    }
-
-    public TemplateRenderer(TemplateNode.Element root, PartialResolver partials, ChildComponentFactory children) {
         this.root = root;
         this.partials = partials;
-        this.children = children;
     }
 
     public static TemplateRenderer of(String template) {
-        return new TemplateRenderer(TemplateParser.parse(template), null, null);
+        return new TemplateRenderer(TemplateParser.parse(template), null);
     }
 
     public static TemplateRenderer of(String template, PartialResolver partials) {
-        return new TemplateRenderer(TemplateParser.parse(template), partials, null);
-    }
-
-    public static TemplateRenderer of(String template, PartialResolver partials, ChildComponentFactory children) {
-        return new TemplateRenderer(TemplateParser.parse(template), partials, children);
+        return new TemplateRenderer(TemplateParser.parse(template), partials);
     }
 
     /**
-     * Render the template for the given component instance.
+     * Render the template for the given component instance, with no nested-component support.
      *
      * @param componentId the id of the owning component (used as the root id prefix)
      * @param context     the component instance whose state the template reads
      */
     public VNode render(String componentId, Object context) {
-        return render(componentId, context, 0);
+        return render(componentId, context, 0, null);
+    }
+
+    /**
+     * Render the template, resolving any {@code <medley-component>} boundaries through {@code host}.
+     *
+     * @param host the session-scoped coordinator that mounts/reuses nested child instances; null
+     *             disables nested components (a boundary then raises a {@link TemplateException})
+     */
+    public VNode render(String componentId, Object context, ComponentHost host) {
+        return render(componentId, context, 0, host);
     }
 
     /** Render starting at a given expansion depth — threaded across component/partial boundaries so
-     *  the recursion guard sees the true nesting (a child render is not a fresh depth-0 tree). */
-    VNode render(String componentId, Object context, int depth) {
-        List<VNode> nodes = renderNode(root, componentId, context, depth);
+     *  the recursion guard sees the true nesting (a child render is not a fresh depth-0 tree). Public
+     *  so a {@link ComponentHost} can mount a nested child at the parent's continuing depth. */
+    public VNode render(String componentId, Object context, int depth, ComponentHost host) {
+        List<VNode> nodes = renderNode(root, componentId, context, depth, host);
         if (nodes.size() != 1) {
             throw new TemplateException("Template root must render exactly one element");
         }
@@ -88,21 +88,21 @@ public final class TemplateRenderer {
 
     /** Returns a list because *for can expand one template node into many VNodes.
      *  {@code depth} counts partial-expansion nesting, for the recursion guard. */
-    private List<VNode> renderNode(TemplateNode node, String id, Object ctx, int depth) {
+    private List<VNode> renderNode(TemplateNode node, String id, Object ctx, int depth, ComponentHost host) {
         return switch (node) {
             case TemplateNode.Text t -> List.of(new VNode.VText(id, t.value()));
             case TemplateNode.Interpolation i -> {
                 String text = new ExpressionEvaluator(ctx).evalString(i.expr());
                 yield List.of(new VNode.VText(id, text));
             }
-            case TemplateNode.Element el -> renderElement(el, id, ctx, depth);
+            case TemplateNode.Element el -> renderElement(el, id, ctx, depth, host);
         };
     }
 
-    private List<VNode> renderElement(TemplateNode.Element el, String id, Object ctx, int depth) {
+    private List<VNode> renderElement(TemplateNode.Element el, String id, Object ctx, int depth, ComponentHost host) {
         // *for expands first
         if (el.forExpr() != null) {
-            return renderForLoop(el, id, ctx, depth);
+            return renderForLoop(el, id, ctx, depth, host);
         }
         // *if gates the single element. When false we still occupy exactly one slot with a
         // stable placeholder so sibling positions (and therefore ids) do not drift between
@@ -110,7 +110,7 @@ public final class TemplateRenderer {
         if (el.ifExpr() != null && !new ExpressionEvaluator(ctx).evalBoolean(el.ifExpr())) {
             return List.of(placeholder(id));
         }
-        return List.of(renderInstance(el, id, ctx, null, depth));
+        return List.of(renderInstance(el, id, ctx, null, depth, host));
     }
 
     /** A zero-content, hidden element used to hold the slot of a false {@code *if}. */
@@ -124,7 +124,7 @@ public final class TemplateRenderer {
         );
     }
 
-    private List<VNode> renderForLoop(TemplateNode.Element el, String id, Object ctx, int depth) {
+    private List<VNode> renderForLoop(TemplateNode.Element el, String id, Object ctx, int depth, ComponentHost host) {
         Object iterable = new ExpressionEvaluator(ctx).eval(el.forExpr());
         if (!(iterable instanceof Iterable<?> items)) {
             throw new TemplateException("*for expression must be Iterable: " + el.forExpr());
@@ -142,7 +142,7 @@ public final class TemplateRenderer {
                     ? new ExpressionEvaluator(scope).evalString(el.keyExpr())
                     : String.valueOf(index);
             String childId = id + "[" + key + "]";
-            out.add(renderInstance(el, childId, scope, key, depth));
+            out.add(renderInstance(el, childId, scope, key, depth, host));
             index++;
         }
         return out;
@@ -150,17 +150,17 @@ public final class TemplateRenderer {
 
     /** One element instance: a {@code <medley-partial>} expands to its fragment; anything else
      *  renders directly. */
-    private VNode renderInstance(TemplateNode.Element el, String id, Object ctx, String key, int depth) {
+    private VNode renderInstance(TemplateNode.Element el, String id, Object ctx, String key, int depth, ComponentHost host) {
         if (PARTIAL_TAG.equals(el.tag())) {
-            return expandPartial(el, id, ctx, key, depth);
+            return expandPartial(el, id, ctx, key, depth, host);
         }
         if (COMPONENT_TAG.equals(el.tag())) {
-            return expandComponent(el, id, ctx, key, depth);
+            return expandComponent(el, id, ctx, key, depth, host);
         }
-        return renderSingleElement(el, id, ctx, key, depth);
+        return renderSingleElement(el, id, ctx, key, depth, host);
     }
 
-    private VNode renderSingleElement(TemplateNode.Element el, String id, Object ctx, String key, int depth) {
+    private VNode renderSingleElement(TemplateNode.Element el, String id, Object ctx, String key, int depth, ComponentHost host) {
         ExpressionEvaluator eval = new ExpressionEvaluator(ctx);
 
         // attributes: static first, then bound (bound can override)
@@ -185,7 +185,7 @@ public final class TemplateRenderer {
             int childPos = 0;
             for (TemplateNode childTemplate : el.children()) {
                 String childId = id + "." + childPos;
-                children.addAll(renderNode(childTemplate, childId, ctx, depth));
+                children.addAll(renderNode(childTemplate, childId, ctx, depth, host));
                 childPos++;
             }
         }
@@ -199,7 +199,7 @@ public final class TemplateRenderer {
      * render the fragment's single root at this slot's id. Non-param references leak through to the
      * owner context. The optional key (from a keyed {@code *for}) is attached to the fragment root.
      */
-    private VNode expandPartial(TemplateNode.Element el, String id, Object ctx, String key, int depth) {
+    private VNode expandPartial(TemplateNode.Element el, String id, Object ctx, String key, int depth, ComponentHost host) {
         if (partials == null) {
             throw new TemplateException("<medley-partial> used but no PartialResolver is configured");
         }
@@ -226,13 +226,13 @@ public final class TemplateRenderer {
         }
         ScopedContext paramScope = new ScopedContext(ctx, params, true);
 
-        List<VNode> nodes = renderNode(fragment, id, paramScope, depth + 1);
+        List<VNode> nodes = renderNode(fragment, id, paramScope, depth + 1, host);
         if (nodes.size() != 1) {
             throw new TemplateException("Partial '" + name + "' must render exactly one root element");
         }
         VNode node = nodes.get(0);
         if (key != null && node instanceof VNode.VElement ve) {
-            node = new VNode.VElement(ve.id(), ve.tag(), ve.attrs(), ve.events(), ve.children(), key);
+            node = new VNode.VElement(ve.id(), ve.tag(), ve.attrs(), ve.events(), ve.children(), key, ve.opaque());
         }
         return node;
     }
@@ -248,17 +248,18 @@ public final class TemplateRenderer {
 
     /**
      * Expand a {@code <medley-component name="x" ...>} boundary: resolve the passed attributes to
-     * param values (static → string, {@code :attr} → evaluated against the owner), ask the factory
-     * for a fresh child (params injected, lifecycle started), and render its template at the child
-     * instance id {@code hostId + "::" + name}. The child sub-tree is wrapped in a marker host
-     * carrying {@code data-medley-cid} (the child instance id) for later action routing.
+     * param values (static → string, {@code :attr} → evaluated against the owner) and ask the
+     * {@link ComponentHost} to mount (first encounter) or reuse (later parent re-render) the child at
+     * the child instance id {@code hostId + "::" + name}, returning its current subtree.
      *
-     * <p>4b.1: the child is rendered inline under the host (display-only children). Making the host
-     * an opaque diff-leaf with independent child render/diff and non-root action routing is 4b.2.</p>
+     * <p>The result is an <em>opaque</em> host carrying {@code data-medley-cid} (the child instance id,
+     * the client's action-routing marker). The embedded child subtree is present for serialization
+     * (SSR / insert / replace) but the differ never recurses into it — the child owns its own diff
+     * loop — so a parent-only re-render leaves the child's DOM and {@code @State} untouched.</p>
      */
-    private VNode expandComponent(TemplateNode.Element el, String hostId, Object ctx, String key, int depth) {
-        if (children == null) {
-            throw new TemplateException("<medley-component> used but no ChildComponentFactory is configured");
+    private VNode expandComponent(TemplateNode.Element el, String hostId, Object ctx, String key, int depth, ComponentHost host) {
+        if (host == null) {
+            throw new TemplateException("<medley-component> used but no ComponentHost is configured");
         }
         if (depth >= MAX_PARTIAL_DEPTH) {
             throw new TemplateException("Component nesting exceeded max depth (" + MAX_PARTIAL_DEPTH
@@ -278,17 +279,16 @@ public final class TemplateRenderer {
             params.put(e.getKey(), ownerEval.eval(e.getValue()));
         }
 
-        ChildComponentFactory.Child child = children.create(name, params);
-        if (child == null) {
+        String childId = hostId + "::" + name;
+        VNode childRoot = host.mountChild(childId, name, params, depth + 1);
+        if (childRoot == null) {
             throw new TemplateException("Unknown component: '" + name + "'");
         }
-        String childId = hostId + "::" + name;
-        VNode childRoot = child.renderer().render(childId, child.component(), depth + 1);
 
         Map<String, String> hostAttrs = new LinkedHashMap<>();
         hostAttrs.put("name", name);
         hostAttrs.put("data-medley-cid", childId);
-        return new VNode.VElement(hostId, COMPONENT_TAG, hostAttrs, Map.of(), List.of(childRoot), key);
+        return new VNode.VElement(hostId, COMPONENT_TAG, hostAttrs, Map.of(), List.of(childRoot), key, true);
     }
 
     private static Map<String, String> substituteEventParams(Map<String, String> events, Object ctx) {

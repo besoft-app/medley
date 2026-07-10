@@ -7,7 +7,8 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  * package (routed components {@link TestCounterComponent} /counter, {@link IslandHostComponent}
  * /island, {@link TableHostComponent} /table, {@link SearchComponent} /search,
  * {@link SignupComponent} /signup, {@link NestedHostComponent} /nested with its
- * {@link CounterBadgeComponent} child, plus the {@link TickerIsland} handler) and pulls in
+ * {@link CounterBadgeComponent} child, {@link CardHostComponent} /cards with its stateful
+ * {@link CounterCardComponent} child, plus the {@link TickerIsland} handler) and pulls in
  * {@code MedleyAutoConfiguration} via {@code @EnableAutoConfiguration}.
  */
 @SpringBootApplication

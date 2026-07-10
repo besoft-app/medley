@@ -236,9 +236,17 @@
     node.removeAttribute("data-medley-on-" + eventName);
   }
 
-  // The PoC uses a single root component; in a multi-component tree this would walk up
-  // to the nearest component boundary marker. Kept simple and explicit here.
+  // Resolve which server component owns an event: walk up from the node to the nearest
+  // <medley-component> boundary host, whose data-medley-cid is that child instance's id (Stage 4,
+  // increment 4b.2). No boundary above the node -> the root component. This is what routes a nested
+  // child's action straight to the child instance instead of the root.
   function ownerComponentId(node) {
+    let el = node;
+    while (el && el.getAttribute) {
+      const cid = el.getAttribute("data-medley-cid");
+      if (cid) return cid;
+      el = el.parentElement;
+    }
     return ROOT_ID;
   }
 

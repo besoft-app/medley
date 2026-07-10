@@ -4,6 +4,7 @@ import app.besoft.medley.core.component.Annotations.MedleyComponent;
 import app.besoft.medley.core.component.Component;
 import app.besoft.medley.core.component.ParamBinder;
 import app.besoft.medley.core.template.ChildComponentFactory;
+import app.besoft.medley.core.template.ComponentHost;
 import app.besoft.medley.core.template.TemplateException;
 import app.besoft.medley.core.template.TemplateNode;
 import app.besoft.medley.core.template.TemplateParser;
@@ -62,16 +63,19 @@ public class TemplateRegistry {
         }
         try (InputStream in = resource.getInputStream()) {
             String template = new String(in.readAllBytes(), StandardCharsets.UTF_8);
-            return TemplateRenderer.of(template, this::resolvePartial, this::createChild);
+            return TemplateRenderer.of(template, this::resolvePartial);
         } catch (IOException e) {
             throw new TemplateException("Failed to read template: " + path, e);
         }
     }
 
-    /** {@link ChildComponentFactory}: mount a fresh {@code @MedleyChild}, inject its {@code @Param}s
-     *  from the parent, start its lifecycle, and pair it with its template renderer. Null when the
-     *  name is unregistered (the renderer then raises a named {@link TemplateException}). */
-    private ChildComponentFactory.Child createChild(String name, Map<String, Object> params) {
+    /** Create a fresh {@code @MedleyChild} for a {@code <medley-component>} boundary: instantiate the
+     *  prototype bean, inject its {@code @Param}s from the parent, start its lifecycle, and pair it
+     *  with its template renderer. Null when the name is unregistered (the renderer then raises a
+     *  named {@link TemplateException}). Called by {@link MedleySession} (the {@link ComponentHost})
+     *  the first time a boundary is mounted; the resulting instance is then persisted for its
+     *  lifetime, so this is not re-run on a parent re-render. */
+    public ChildComponentFactory.Child createChild(String name, Map<String, Object> params) {
         Component child = components == null ? null : components.newInstance(name);
         if (child == null) {
             return null;

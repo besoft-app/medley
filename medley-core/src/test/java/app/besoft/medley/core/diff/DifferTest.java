@@ -16,6 +16,11 @@ class DifferTest {
         return new VNode.VElement(id, tag, attrs, events, children, key);
     }
 
+    private static VNode.VElement opaque(String id, String tag, Map<String, String> attrs,
+                                         List<VNode> children) {
+        return new VNode.VElement(id, tag, attrs, Map.of(), children, null, true);
+    }
+
     private static VNode.VText txt(String id, String value) {
         return new VNode.VText(id, value);
     }
@@ -187,5 +192,48 @@ class DifferTest {
         // Not all children are keyed -> positional fallback -> reorder is NOT a clean no-op.
         assertTrue(!Differ.diff(a, b).isEmpty(),
                 "a whitespace sibling must drop keyed reconciliation to positional diffing");
+    }
+
+    // ---- opaque boundary (nested server components, 4b.2) ---------------------
+
+    @Test
+    void opaqueBoundaryDoesNotDiffChildren() {
+        // A <medley-component> host is diff-opaque: the child subtree is owned and diffed by the
+        // child's own instance, so a parent re-render must never touch it — even when the embedded
+        // child subtree differs (e.g. the child's state moved on since the parent last rendered).
+        VNode a = opaque("root.0::c", "medley-component", Map.of("name", "c"),
+                List.of(el("root.0::c", "div", Map.of(), Map.of(), List.of(txt("root.0::c.0", "1")), null)));
+        VNode b = opaque("root.0::c", "medley-component", Map.of("name", "c"),
+                List.of(el("root.0::c", "div", Map.of(), Map.of(), List.of(txt("root.0::c.0", "2")), null)));
+        assertTrue(Differ.diff(a, b).isEmpty(),
+                "opaque boundary must not emit patches for its child subtree");
+    }
+
+    @Test
+    void opaqueBoundaryStillDiffsHostAttributes() {
+        // Props-down (4b.3) surfaces as a host-attribute patch, so the host's own attrs must still
+        // diff — only the child subtree is skipped.
+        VNode a = opaque("root.0::c", "medley-component", Map.of("name", "c", "data-medley-cid", "root.0::c"),
+                List.of(el("root.0::c", "div", Map.of(), Map.of(), List.of(txt("root.0::c.0", "same")), null)));
+        VNode b = opaque("root.0::c", "medley-component", Map.of("name", "c", "data-medley-cid", "root.0::c", "label", "hi"),
+                List.of(el("root.0::c", "div", Map.of(), Map.of(), List.of(txt("root.0::c.0", "same")), null)));
+        List<Patch> patches = Differ.diff(a, b);
+        assertEquals(1, patches.size());
+        Patch.SetAttr p = (Patch.SetAttr) patches.get(0);
+        assertEquals("label", p.name());
+        assertEquals("hi", p.value());
+    }
+
+    @Test
+    void nonOpaqueControlDiffsChildren() {
+        // Same shape as opaqueBoundaryDoesNotDiffChildren but non-opaque: proves the opacity flag is
+        // what suppresses the child diff, not some other structural quirk.
+        VNode a = el("root.0::c", "medley-component", Map.of("name", "c"), Map.of(),
+                List.of(el("root.0::c", "div", Map.of(), Map.of(), List.of(txt("root.0::c.0", "1")), null)), null);
+        VNode b = el("root.0::c", "medley-component", Map.of("name", "c"), Map.of(),
+                List.of(el("root.0::c", "div", Map.of(), Map.of(), List.of(txt("root.0::c.0", "2")), null)), null);
+        List<Patch> patches = Differ.diff(a, b);
+        assertEquals(1, patches.size());
+        assertTrue(patches.get(0) instanceof Patch.SetText);
     }
 }
