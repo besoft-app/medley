@@ -56,6 +56,14 @@ public final class Differ {
 
         diffAttrs(pe, ne);
         diffEvents(pe, ne);
+
+        // An opaque boundary (a <medley-component> host) owns its child subtree via its own
+        // instance's diff loop, so a parent re-render diffs the host's attributes/events but never
+        // recurses into the children. This is what keeps a nested child's DOM (and @State) untouched
+        // when only the parent re-renders, and is symmetric to how an island's internals are opaque.
+        if (ne.opaque()) {
+            return;
+        }
         diffChildren(pe, ne);
     }
 

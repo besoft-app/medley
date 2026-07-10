@@ -24,6 +24,11 @@ public sealed interface VNode permits VNode.VElement, VNode.VText {
      * @param events   DOM event -> server action id (e.g. "click" -> "increment")
      * @param children child nodes in document order
      * @param key      optional stable key used by the differ for list reconciliation
+     * @param opaque   when true the differ treats this element as a boundary: it diffs the host's
+     *                 own attributes/events but never recurses into {@code children}. Used by nested
+     *                 server components ({@code <medley-component>}), whose child subtree is owned and
+     *                 diffed by its own instance, so a parent re-render never touches the child's DOM.
+     *                 The serializer still emits the children (needed for SSR and insert/replace).
      */
     record VElement(
             String id,
@@ -31,12 +36,19 @@ public sealed interface VNode permits VNode.VElement, VNode.VText {
             Map<String, String> attrs,
             Map<String, String> events,
             List<VNode> children,
-            String key
+            String key,
+            boolean opaque
     ) implements VNode {
         public VElement {
             attrs = Map.copyOf(attrs);
             events = Map.copyOf(events);
             children = List.copyOf(children);
+        }
+
+        /** Ordinary (non-opaque) element — the common case. */
+        public VElement(String id, String tag, Map<String, String> attrs,
+                        Map<String, String> events, List<VNode> children, String key) {
+            this(id, tag, attrs, events, children, key, false);
         }
     }
 

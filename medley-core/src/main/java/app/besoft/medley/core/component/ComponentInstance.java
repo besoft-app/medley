@@ -3,6 +3,7 @@ package app.besoft.medley.core.component;
 import app.besoft.medley.core.diff.Differ;
 import app.besoft.medley.core.diff.HtmlSerializer;
 import app.besoft.medley.core.diff.Patch;
+import app.besoft.medley.core.template.ComponentHost;
 import app.besoft.medley.core.template.TemplateException;
 import app.besoft.medley.core.template.TemplateRenderer;
 import app.besoft.medley.core.vnode.VNode;
@@ -27,13 +28,20 @@ public final class ComponentInstance {
     private final TemplateRenderer renderer;
     private final Map<String, Method> actions;
     private final String id;
+    /** Coordinator for nested {@code <medley-component>} boundaries; null for a leaf/PoC tree. */
+    private final ComponentHost host;
 
     private VNode lastTree;
 
     public ComponentInstance(String id, Component component, TemplateRenderer renderer) {
+        this(id, component, renderer, null);
+    }
+
+    public ComponentInstance(String id, Component component, TemplateRenderer renderer, ComponentHost host) {
         this.id = id;
         this.component = component;
         this.renderer = renderer;
+        this.host = host;
         this.component.bindId(id);
         this.actions = ActionScanner.scan(component.getClass());
     }
@@ -49,13 +57,29 @@ public final class ComponentInstance {
     /** Initial render: builds the first VNode tree and returns its HTML for SSR. */
     public String renderInitialHtml() {
         component.onInit();
-        lastTree = renderer.render(id, component);
+        lastTree = renderer.render(id, component, host);
         return HtmlSerializer.serialize(lastTree);
+    }
+
+    /**
+     * Render (or re-render) this instance's own subtree at the given expansion depth, updating the
+     * diff baseline, and return it. Used by a {@link ComponentHost} to mount a nested child — {@code
+     * onInit} is <em>not</em> called here (a child's lifecycle is started by the factory), and depth
+     * is threaded so the recursion guard sees the true nesting across the boundary.
+     */
+    public VNode renderTree(int depth) {
+        lastTree = renderer.render(id, component, depth, host);
+        return lastTree;
+    }
+
+    /** The current (last-rendered) subtree, or null if not yet rendered. */
+    public VNode currentTree() {
+        return lastTree;
     }
 
     /** Re-render and diff against the previous tree. Call after state mutations. */
     public List<Patch> renderToPatches() {
-        VNode next = renderer.render(id, component);
+        VNode next = renderer.render(id, component, host);
         List<Patch> patches = (lastTree == null)
                 ? List.of() // nothing to diff against; caller should have used renderInitialHtml
                 : Differ.diff(lastTree, next);
