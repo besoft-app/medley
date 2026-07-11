@@ -20,7 +20,7 @@ import app.besoft.medley.spring.MedleyRoute;
 public class CounterComponent extends Component {
 
     @State int count = 0;
-    @Param String label = "Kliknięcia";
+    @Param String label = "Clicks";
 
     @Action void increment() { count++; }
     @Action void decrement() { if (count > 0) count--; }

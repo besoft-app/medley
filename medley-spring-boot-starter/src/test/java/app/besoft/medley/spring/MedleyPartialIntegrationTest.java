@@ -51,7 +51,7 @@ class MedleyPartialIntegrationTest {
         ResponseEntity<String> ssr = rest.getForEntity("/partials", String.class);
         assertThat(ssr.getStatusCode().value()).isEqualTo(200);
         String html = ssr.getBody();
-        assertThat(html).as("fragment expanded inline with its param").contains("Imię");
+        assertThat(html).as("fragment expanded inline with its param").contains("Name");
         assertThat(html).as("event pass-through rewritten to the owner action")
                 .contains("data-medley-on-input=\"setName($value)\"");
         String sessionCookie = ssr.getHeaders().getFirst(HttpHeaders.SET_COOKIE).split(";", 2)[0];

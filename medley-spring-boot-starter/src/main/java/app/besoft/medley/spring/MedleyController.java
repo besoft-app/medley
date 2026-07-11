@@ -73,7 +73,7 @@ public class MedleyController {
     private String shell(String bodyHtml) {
         return """
             <!doctype html>
-            <html lang="pl">
+            <html lang="en">
             <head>
               <meta charset="utf-8">
               <meta name="viewport" content="width=device-width, initial-scale=1">

@@ -30,7 +30,7 @@ public class DevServer {
     @Annotations.MedleyComponent("counter")
     public static class Counter extends Component {
         @Annotations.State int count = 0;
-        @Annotations.Param String label = "Kliknięcia";
+        @Annotations.Param String label = "Clicks";
         @Annotations.Action void increment() { count++; }
         @Annotations.Action void decrement() { if (count > 0) count--; }
         @Annotations.Action void reset() { count = 0; }
