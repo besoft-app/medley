@@ -42,15 +42,30 @@ public class MedleyWebSocketHandler extends TextWebSocketHandler {
     private final ObjectMapper mapper;
     private final PatchEncoder encoder;
     private final IslandRegistry islands;
+    private final int maxMessageLength;
 
+    /** No inbound size cap — for PoC/tests that don't wire {@link MedleyProperties}. */
     public MedleyWebSocketHandler(ObjectMapper mapper, PatchEncoder encoder, IslandRegistry islands) {
+        this(mapper, encoder, islands, 0);
+    }
+
+    public MedleyWebSocketHandler(ObjectMapper mapper, PatchEncoder encoder, IslandRegistry islands,
+                                  int maxMessageLength) {
         this.mapper = mapper;
         this.encoder = encoder;
         this.islands = islands;
+        this.maxMessageLength = maxMessageLength;
     }
 
     @Override
     protected void handleTextMessage(WebSocketSession wsSession, TextMessage message) throws Exception {
+        // Inbound hardening (5c): reject an oversized frame before parsing/processing it.
+        if (maxMessageLength > 0 && message.getPayloadLength() > maxMessageLength) {
+            log.warn("Rejected oversized Medley message: {} > {}", message.getPayloadLength(), maxMessageLength);
+            sendError(wsSession, "Message too large");
+            return;
+        }
+
         MedleySession medley = medleySession(wsSession);
         if (medley == null) {
             sendError(wsSession, "No Medley session bound to this connection");

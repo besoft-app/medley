@@ -90,7 +90,8 @@ public class MedleyAutoConfiguration {
     @ConditionalOnMissingBean
     public MedleyWebSocketHandler medleyWebSocketHandler(ObjectMapper mapper, PatchEncoder encoder,
                                                          IslandRegistry islands) {
-        return new MedleyWebSocketHandler(mapper, encoder, islands);
+        return new MedleyWebSocketHandler(mapper, encoder, islands,
+                properties.getSecurity().getMaxMessageBytes());
     }
 
     @Bean
