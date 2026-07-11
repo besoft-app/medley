@@ -5,7 +5,9 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 
@@ -17,6 +19,8 @@ class ExpressionEvaluatorTest {
         public boolean active = true;
         public List<String> items = List.of("a", "b");
         public Inner inner = new Inner();
+        // Error-bag pattern (Stage 4, increment 3): a Map surfaced via *if / {{ }} in templates.
+        public Map<String, String> errors = new HashMap<>();
         public int getDoubled() { return count * 2; }
     }
 
@@ -83,6 +87,32 @@ class ExpressionEvaluatorTest {
         assertTrue(eval.evalBoolean("items"));      // non-empty list
         assertTrue(eval.evalBoolean("name"));       // non-empty string
         assertTrue(eval.evalBoolean("count"));      // non-zero number
+    }
+
+    @Test
+    void resolvesMapValueByKey() {
+        Ctx ctx = new Ctx();
+        ctx.errors.put("name", "required");
+        ExpressionEvaluator e = new ExpressionEvaluator(ctx);
+        assertEquals("required", e.eval("errors.name"));
+    }
+
+    @Test
+    void absentMapKeyIsNullAndFalsy() {
+        // The "no error" case: an absent key resolves to null so *if hides and {{ }} is empty,
+        // instead of throwing like an unknown field/getter would.
+        assertEquals(null, eval.eval("errors.email"));
+        assertFalse(eval.evalBoolean("errors.email"));
+    }
+
+    @Test
+    void mapKeyResolutionPrecedesGetters() {
+        // On a Map, dotted access is a key lookup — it must NOT dispatch to Map methods like
+        // isEmpty()/size(). A key named "empty" resolves to its value, not Boolean isEmpty().
+        Ctx ctx = new Ctx();
+        ctx.errors.put("empty", "boom");
+        ExpressionEvaluator e = new ExpressionEvaluator(ctx);
+        assertEquals("boom", e.eval("errors.empty"));
     }
 
     @Test

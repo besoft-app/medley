@@ -3,6 +3,7 @@ package app.besoft.medley.core.template;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Evaluates the deliberately small expression language used inside templates.
@@ -10,6 +11,7 @@ import java.util.List;
  * <p>Supported, against a single "context" object (the component instance):
  * <ul>
  *   <li>field / zero-arg getter access: {@code count}, {@code label}, {@code user.name}</li>
+ *   <li>Map value by key in a dotted path: {@code errors.name} (absent key → {@code null})</li>
  *   <li>literals: integers, {@code true}/{@code false}, single-quoted strings</li>
  *   <li>comparisons: {@code == != < <= > >=}</li>
  *   <li>boolean ops: {@code && || !}</li>
@@ -183,7 +185,7 @@ public final class ExpressionEvaluator {
         }
     }
 
-    /** Reads a field or zero-arg getter by name. */
+    /** Reads a field, zero-arg getter, or (on a Map) a value by key. */
     private static Object readMember(Object target, String name) {
         // Loop scopes resolve the loop variable locally, then delegate to the parent context.
         if (target instanceof TemplateRenderer.ScopedContext scope) {
@@ -191,6 +193,12 @@ public final class ExpressionEvaluator {
                 return scope.locals().get(name);
             }
             return readMember(scope.parent(), name);
+        }
+        // On a Map, dotted access is a key lookup (the error-bag pattern: {{ errors.name }}). This
+        // precedes getter/field resolution so a key never collides with Map methods (isEmpty/size);
+        // an absent key returns null, which renders as a hidden *if / empty interpolation.
+        if (target instanceof Map<?, ?> map) {
+            return map.get(name);
         }
         Class<?> cls = target.getClass();
         // try getter: getX() / isX()

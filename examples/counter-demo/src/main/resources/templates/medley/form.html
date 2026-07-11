@@ -1,0 +1,7 @@
+<div class="form-demo">
+  <h1>Medley — component library (partials)</h1>
+  <medley-partial name="field" label="First name" onChange="setFirst" :error="errors.first"></medley-partial>
+  <medley-partial name="field" label="Last name" onChange="setLast" :error="errors.last"></medley-partial>
+  <button @click="submit">Save</button>
+  <p *if="done" class="ok">Saved! ✓</p>
+</div>

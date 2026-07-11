@@ -35,8 +35,14 @@ public class MedleyAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public TemplateRegistry medleyTemplateRegistry() {
-        return new TemplateRegistry(properties.getTemplateLocation());
+    public TemplateRegistry medleyTemplateRegistry(ComponentRegistry components) {
+        return new TemplateRegistry(properties.getTemplateLocation(), components);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    public ComponentRegistry medleyComponentRegistry(ConfigurableListableBeanFactory beanFactory) {
+        return new ComponentRegistry(beanFactory);
     }
 
     @Bean
