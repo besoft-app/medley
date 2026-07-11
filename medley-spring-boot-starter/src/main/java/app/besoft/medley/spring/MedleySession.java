@@ -3,6 +3,7 @@ package app.besoft.medley.spring;
 import app.besoft.medley.core.component.Component;
 import app.besoft.medley.core.component.ComponentInstance;
 import app.besoft.medley.core.component.ParamBinder;
+import app.besoft.medley.core.diff.IdPaths;
 import app.besoft.medley.core.diff.Patch;
 import app.besoft.medley.core.template.ChildComponentFactory;
 import app.besoft.medley.core.template.ComponentHost;
@@ -10,10 +11,15 @@ import app.besoft.medley.core.template.TemplateRenderer;
 import app.besoft.medley.core.vnode.VNode;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Holds the live component instances for a single user session, and coordinates nested children.
@@ -37,26 +43,50 @@ import java.util.concurrent.ConcurrentHashMap;
  * buffered child patches to the owner's — the opaque boundary keeps the owner diff from also emitting
  * them, so props-down reaches nested children in the same single response.</p>
  *
+ * <p><b>Eviction + cap (Stage 4, increment 4b.3b):</b> a child whose boundary structurally disappears
+ * this pass (an {@code *if} turning false → a {@code Replace} host→placeholder, or a dropped keyed
+ * {@code *for} item → a {@code Remove}) is evicted: {@link #evictByPatches(List)} drops every
+ * registered child covered by such a patch that was <em>not</em> (re)mounted this pass (the
+ * touched-set spares a boundary a {@code Replace} <em>introduced</em>, whose subtree is already in the
+ * patch HTML). {@link Component#onDestroy()} cascades to descendants. A per-session component cap
+ * (runaway guard) fails fast on mount.</p>
+ *
  * <p>Concurrency: events for one session are processed one at a time (see the WebSocket handler), so
  * a {@code ConcurrentHashMap} for the registry plus a single-threaded render loop per session keeps
  * diffs deterministic.</p>
  */
 public class MedleySession implements ComponentHost {
 
+    private static final Logger log = LoggerFactory.getLogger(MedleySession.class);
+
     private final TemplateRegistry templates;
+    private final int maxComponents;
     private final Map<String, ComponentInstance> instances = new ConcurrentHashMap<>();
     /** Last-injected bound param values per child id, so a re-render only re-injects on real change. */
     private final Map<String, Map<String, Object>> lastParams = new ConcurrentHashMap<>();
     /** Patches cascaded from children re-rendered during the current owner render (see class doc).
      *  Touched only on the render/WS thread, bracketed by resetRenderCycle()/drainCascade(). */
     private final List<Patch> cascade = new ArrayList<>();
+    /** Child ids (re)mounted during the current render pass, so eviction spares a just-mounted child. */
+    private final Set<String> thisPassTouched = ConcurrentHashMap.newKeySet();
 
+    /** Unlimited component cap — for the PoC/tests that don't wire {@link MedleyProperties}. */
     public MedleySession(TemplateRegistry templates) {
-        this.templates = templates;
+        this(templates, 0);
     }
 
-    /** Mount a freshly created root component under a generated id; returns the instance. */
+    /** @param maxComponents per-session component cap; {@code 0} or negative means unlimited. */
+    public MedleySession(TemplateRegistry templates, int maxComponents) {
+        this.templates = templates;
+        this.maxComponents = maxComponents;
+    }
+
+    /** Mount a freshly created root component under a generated id; returns the instance. Evicts any
+     *  previously-registered subtree under {@code id} first, so revisiting a route in the same session
+     *  does not orphan the old component tree (and leak cap headroom). */
     public ComponentInstance mount(String id, Component component) {
+        remove(id);
+        enforceCap(id);
         TemplateRenderer renderer = templates.rendererFor(component.getClass());
         ComponentInstance instance = new ComponentInstance(id, component, renderer, this);
         instances.put(id, instance);
@@ -74,6 +104,7 @@ public class MedleySession implements ComponentHost {
      */
     @Override
     public VNode mountChild(String childId, String name, Map<String, Object> params, int depth) {
+        thisPassTouched.add(childId);
         ComponentInstance existing = instances.get(childId);
         if (existing != null) {
             if (!params.equals(lastParams.get(childId))) {
@@ -88,6 +119,7 @@ public class MedleySession implements ComponentHost {
         if (created == null) {
             return null;
         }
+        enforceCap(childId);
         ComponentInstance child = new ComponentInstance(
                 childId, (Component) created.component(), created.renderer(), this);
         // Render before registering, so a template that fails to render does not leave a
@@ -98,10 +130,11 @@ public class MedleySession implements ComponentHost {
         return tree;
     }
 
-    /** Start a fresh render cycle: clear any patches left buffered from a previous message. Called by
-     *  the WebSocket handler immediately before invoking an action / island commit. */
+    /** Start a fresh render cycle: clear the cascade buffer and the touched-set left from a previous
+     *  message. Called by the WebSocket handler immediately before invoking an action / island commit. */
     public void resetRenderCycle() {
         cascade.clear();
+        thisPassTouched.clear();
     }
 
     /** Drain the patches cascaded from children whose params changed during this render cycle. */
@@ -109,6 +142,40 @@ public class MedleySession implements ComponentHost {
         List<Patch> drained = new ArrayList<>(cascade);
         cascade.clear();
         return drained;
+    }
+
+    /**
+     * Evict children whose boundary was structurally removed by this render's patches (a {@code Replace}
+     * host→placeholder for a false {@code *if}, or a {@code Remove} for a dropped keyed item). A
+     * registered child is evicted when it is a self-or-descendant of such a patch id and was not
+     * (re)mounted this pass — the touched-set spares a boundary a {@code Replace} <em>introduced</em>
+     * (an {@code *if} turning true), whose subtree is already carried in the patch HTML. Evicting a
+     * boundary evicts its whole subtree, since each descendant is itself covered by the patch id.
+     * Call after merging the owner + cascade patches, on the render/WS thread.
+     */
+    public void evictByPatches(List<Patch> patches) {
+        List<String> structuralIds = new ArrayList<>();
+        for (Patch p : patches) {
+            if (p instanceof Patch.Replace || p instanceof Patch.Remove) {
+                structuralIds.add(p.id());
+            }
+        }
+        if (structuralIds.isEmpty()) {
+            return;
+        }
+        List<String> doomed = new ArrayList<>();
+        for (String id : instances.keySet()) {
+            if (thisPassTouched.contains(id)) {
+                continue;
+            }
+            for (String structuralId : structuralIds) {
+                if (IdPaths.isSelfOrDescendant(structuralId, id)) {
+                    doomed.add(id);
+                    break;
+                }
+            }
+        }
+        evictAll(doomed);
     }
 
     public ComponentInstance get(String id) {
@@ -119,11 +186,36 @@ public class MedleySession implements ComponentHost {
         return instances.containsKey(id);
     }
 
+    /** Remove a subtree (an id and every descendant), cascading {@link Component#onDestroy()}. */
     public void remove(String id) {
-        ComponentInstance removed = instances.remove(id);
-        lastParams.remove(id);
-        if (removed != null) {
-            removed.component().onDestroy();
+        List<String> subtree = new ArrayList<>();
+        for (String k : instances.keySet()) {
+            if (IdPaths.isSelfOrDescendant(id, k)) {
+                subtree.add(k);
+            }
+        }
+        evictAll(subtree);
+    }
+
+    /** Evict the given ids deepest-first, so a child's {@code onDestroy} runs before its parent's. */
+    private void evictAll(List<String> ids) {
+        ids.sort(Comparator.comparingInt(String::length).reversed());
+        for (String id : ids) {
+            ComponentInstance removed = instances.remove(id);
+            lastParams.remove(id);
+            if (removed != null) {
+                try {
+                    removed.component().onDestroy();
+                } catch (RuntimeException e) {
+                    log.warn("onDestroy of component '{}' threw", id, e);
+                }
+            }
+        }
+    }
+
+    private void enforceCap(String id) {
+        if (maxComponents > 0 && instances.size() >= maxComponents) {
+            throw new MedleyCapacityExceededException(id, maxComponents);
         }
     }
 }

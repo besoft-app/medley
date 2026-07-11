@@ -86,6 +86,8 @@ public class MedleyWebSocketHandler extends TextWebSocketHandler {
                 // Props-down cascade (4b.3a): append patches from children whose bound params changed
                 // during this render. The opaque boundary keeps invokeAction from also emitting them.
                 patches = PatchMerge.mergeWithSuppression(patches, medley.drainCascade());
+                // Eviction (4b.3b): a child whose boundary was structurally removed this render is freed.
+                medley.evictByPatches(patches);
             } catch (RuntimeException e) {
                 // Unknown/failed action: log server-side (the client only gets a generic message)
                 // and keep the socket open. Only invokeAction is guarded, so a serialization/
@@ -127,6 +129,7 @@ public class MedleyWebSocketHandler extends TextWebSocketHandler {
                 islands.invoke(island, action, instance.component(), payload);
                 patches = instance.renderToPatches();
                 patches = PatchMerge.mergeWithSuppression(patches, medley.drainCascade());
+                medley.evictByPatches(patches);
             } catch (RuntimeException e) {
                 log.warn("Medley island commit '{}.{}' on component '{}' failed",
                         island, action, componentId, e);
