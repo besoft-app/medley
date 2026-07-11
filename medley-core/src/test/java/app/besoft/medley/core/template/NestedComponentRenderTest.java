@@ -121,6 +121,32 @@ class NestedComponentRenderTest {
     }
 
     @Test
+    void keyedForOfComponentsMountsDistinctKeyedHosts() {
+        // 4b.3c: a keyed *for of <medley-component> — each item mounts its own child at id[key]::name,
+        // and every boundary host is a keyed element so the differ's keyed reconciliation engages.
+        FakeHost h = new FakeHost().add("counter", Counter::new, COUNTER_TPL);
+        class OwnerWithList { public java.util.List<Integer> items = java.util.List.of(1, 2); }
+        VNode.VElement div = (VNode.VElement) render(
+                "<div><medley-component *for=\"item : items\" key=\"item\" name=\"counter\" :start=\"item\">"
+              + "</medley-component></div>",
+                h, new OwnerWithList());
+
+        assertEquals(2, div.children().size());
+        VNode.VElement first = (VNode.VElement) div.children().get(0);
+        VNode.VElement second = (VNode.VElement) div.children().get(1);
+        assertEquals("root.0[1]", first.id());
+        assertEquals("1", first.key(), "the boundary host carries the loop key");
+        assertTrue(first.opaque());
+        assertEquals("root.0[1]::counter", first.attrs().get("data-medley-cid"));
+        assertEquals("root.0[2]::counter", second.attrs().get("data-medley-cid"));
+        assertTrue(text((VNode.VElement) first.children().get(0)).contains("count: 1"));
+        assertTrue(text((VNode.VElement) second.children().get(0)).contains("count: 2"),
+                "each keyed item gets its own child with its own param");
+        assertEquals(1, h.createCounts.get("root.0[1]::counter"));
+        assertEquals(1, h.createCounts.get("root.0[2]::counter"));
+    }
+
+    @Test
     void unknownComponentThrows() {
         assertThrows(TemplateException.class, () -> render(
                 "<div><medley-component name=\"missing\"></medley-component></div>",

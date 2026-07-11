@@ -10,6 +10,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  * {@link CounterBadgeComponent} child, {@link CardHostComponent} /cards with its stateful
  * {@link CounterCardComponent} child, {@link ParamCascadeHostComponent} /cascade with its
  * {@link EchoParamComponent} child, {@link ToggleChildHostComponent} /toggle-child (eviction),
+ * {@link CardListHostComponent} /card-list (keyed *for of components),
  * plus the {@link TickerIsland} handler) and pulls in
  * {@code MedleyAutoConfiguration} via {@code @EnableAutoConfiguration}.
  */
