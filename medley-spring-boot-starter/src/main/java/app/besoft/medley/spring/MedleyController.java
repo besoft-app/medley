@@ -65,7 +65,7 @@ public class MedleyController {
         if (existing instanceof MedleySession s) {
             return s;
         }
-        MedleySession s = new MedleySession(templates);
+        MedleySession s = new MedleySession(templates, properties.getSession().getMaxComponents());
         httpSession.setAttribute(MedleySession.class.getName(), s);
         return s;
     }
