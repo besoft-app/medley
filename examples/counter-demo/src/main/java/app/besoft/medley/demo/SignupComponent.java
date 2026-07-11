@@ -36,10 +36,10 @@ public class SignupComponent extends Component {
     @Action void submit() {
         errors.clear();
         if (name.trim().length() < 2) {
-            errors.put("name", "Podaj imię (min. 2 znaki).");
+            errors.put("name", "Enter a name (min. 2 characters).");
         }
         if (!email.matches(EMAIL)) {
-            errors.put("email", "Niepoprawny adres e-mail.");
+            errors.put("email", "Invalid e-mail address.");
         }
         if (errors.isEmpty()) {   // valid -> commit and reset the form
             registered++;

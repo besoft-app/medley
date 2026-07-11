@@ -43,7 +43,7 @@ public class ChartComponent extends Component {
     public boolean isHasSelection() { return selected >= 0; }
 
     public String getSelectedLabel() {
-        return selected < 0 ? "(brak — najedź i kliknij punkt)"
-                : "punkt #" + selected + " = " + POINTS[selected];
+        return selected < 0 ? "(none — hover and click a point)"
+                : "point #" + selected + " = " + POINTS[selected];
     }
 }

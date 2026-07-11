@@ -1,88 +1,86 @@
 # Medley
 
-Server-driven, hybrydowy framework UI dla Spring Boot — działający w duchu Blazor Server,
-podobny w funkcjonowaniu do Vaadin Flow. Logika i stan komponentów żyją domyślnie na
-serwerze; po sieci leci tylko **diff** (lista patchy), a nie cały HTML. Dla ciężkiej
-interakcji przewidziano **wyspy klienckie** (`<medley-island>`) działające bez round-tripów.
+A server-driven, hybrid UI framework for Spring Boot — working in the spirit of Blazor Server,
+similar in operation to Vaadin Flow. Component logic and state live on the server by default;
+only a **diff** (a list of patches) travels over the wire, not the whole HTML. For heavy
+interaction there are **client islands** (`<medley-island>`) that run without round-trips.
 
-To jest **PoC** (Proof of Concept) — celowo mały i czytelny rdzeń, gotowy do dalszego rozwoju.
+This is a **PoC** (Proof of Concept) — a deliberately small, readable core, ready for further work.
 
 ---
 
-## ⚠️ Krok 0 — wygeneruj Gradle wrapper jar
+## Getting started
 
-Archiwum **nie zawiera** `gradle/wrapper/gradle-wrapper.jar` (binarka nie była dostępna w
-środowisku, w którym projekt powstał). Wygeneruj go raz:
+The Gradle wrapper jar **is committed** (`gradle/wrapper/gradle-wrapper.jar`), so a fresh clone can
+run `./gradlew` immediately — no bootstrap step needed. If the wrapper is ever missing, regenerate it
+once:
 
 ```bash
-# jeśli masz zainstalowany Gradle 8.x:
+# if you have Gradle 8.x installed:
 gradle wrapper --gradle-version 8.10.2
 
-# albo użyj dołączonego skryptu (wymaga systemowego gradle):
+# or use the bundled script (requires a system gradle):
 ./bootstrap.sh
 ```
 
-Po tym kroku `./gradlew` działa samodzielnie i systemowy Gradle nie jest już potrzebny.
-Instalacja Gradle: https://gradle.org/install/ (np. `brew install gradle`,
+**Java 21** is required. Gradle install: https://gradle.org/install/ (e.g. `brew install gradle`,
 `sdk install gradle 8.10.2`).
-
-Wymagana **Java 21**.
 
 ---
 
-## Uruchomienie demo
+## Running the demo
 
 ```bash
 ./gradlew :examples:counter-demo:bootRun
 ```
 
-Otwórz **http://localhost:8080/counter**.
+Open **http://localhost:8080/counter**.
 
-Co zobaczysz: licznik renderowany na serwerze (SSR). Kliknięcie `+` wysyła zdarzenie po
-WebSocket, serwer zmienia stan, liczy diff i odsyła pojedynczy patch `text`. W zakładce
-Network (WS) widać, że przy kolejnych kliknięciach leci dokładnie jedna mała operacja.
+What you'll see: a counter rendered on the server (SSR). Clicking `+` sends an event over the
+WebSocket, the server changes state, computes the diff, and sends back a single `text` patch. In the
+Network (WS) tab you can see that each subsequent click sends exactly one small operation.
 
 ---
 
-## Struktura
+## Structure
 
 ```
 medley/
-├── medley-core/                      # silnik niezależny od Springa
+├── medley-core/                      # engine independent of Spring
 │   └── app/besoft/medley/core/
 │       ├── vnode/        VNode (VElement, VText)
-│       ├── template/     parser szablonów + evaluator wyrażeń + renderer
+│       ├── template/     template parser + expression evaluator + renderer
 │       ├── diff/         Differ, Patch, HtmlSerializer
-│       └── component/    Component, ComponentInstance, adnotacje, ActionScanner
+│       └── component/    Component, ComponentInstance, annotations, ActionScanner
 │
-├── medley-spring-boot-starter/       # integracja ze Spring Boot
-│   ├── app/besoft/medley/spring/            autokonfiguracja, WS, SSR, sesja, routing
+├── medley-spring-boot-starter/       # Spring Boot integration
+│   ├── app/besoft/medley/spring/            auto-configuration, WS, SSR, session, routing
 │   └── resources/
-│       ├── static/medley/medley.js   runtime kliencki (hydratacja + patch + wyspy)
-│       └── META-INF/spring/...imports  rejestracja autokonfiguracji
+│       ├── static/medley/medley.js   client runtime (hydration + patch + islands)
+│       └── META-INF/spring/...imports  auto-configuration registration
 │
-└── examples/counter-demo/            # aplikacja demonstracyjna
+└── examples/counter-demo/            # demonstration application
 ```
 
 ---
 
-## Jak to działa (pętla)
+## How it works (the loop)
 
 ```
-1. GET /counter            → SSR: serwer renderuje pełny HTML z data-medley-id
-2. medley.js               → hydratacja (podpięcie listenerów) + otwarcie WebSocket
-3. klik "+"                → WS: { componentId:"root", action:"increment" }
-4. serwer                  → invokeAction → mutacja @State → re-render → diff
+1. GET /counter            → SSR: the server renders full HTML with data-medley-id
+2. medley.js               → hydration (wiring listeners) + opening the WebSocket
+3. click "+"               → WS: { componentId:"root", action:"increment" }
+4. server                  → invokeAction → mutate @State → re-render → diff
 5. WS                      → [ { "op":"text", "id":"root.3.2", "value":"1" } ]
-6. medley.js               → applyPatches: jedna zmiana w DOM
+6. medley.js               → applyPatches: one change in the DOM
 ```
 
-Stan komponentu żyje w `MedleySession` (przypiętej do sesji HTTP). WebSocket dziedziczy tę
-sesję przez `MedleyHandshakeInterceptor`, więc autoryzacja i stan są wspólne ze stroną.
+Component state lives in `MedleySession` (pinned to the HTTP session). The WebSocket inherits that
+session via `MedleyHandshakeInterceptor`, so authorization and state are shared with the page.
 
 ---
 
-## Model komponentu
+## Component model
 
 ```java
 @MedleyRoute("/counter")
@@ -90,7 +88,7 @@ sesję przez `MedleyHandshakeInterceptor`, więc autoryzacja i stan są wspólne
 @Scope("prototype")
 public class CounterComponent extends Component {
     @State int count = 0;
-    @Param String label = "Kliknięcia";
+    @Param String label = "Clicks";
 
     @Action void increment() { count++; }
     @Action void reset()     { count = 0; }
@@ -106,93 +104,93 @@ public class CounterComponent extends Component {
 </div>
 ```
 
-Składnia szablonu: `{{ expr }}` interpolacja · `@event="action"` zdarzenie → `@Action` ·
-`:attr="expr"` atrybut wyliczany · `*if="expr"` warunek · `*for="x : items"` pętla (z `key`).
+Template syntax: `{{ expr }}` interpolation · `@event="action"` event → `@Action` ·
+`:attr="expr"` computed attribute · `*if="expr"` condition · `*for="x : items"` loop (with `key`).
 
 ---
 
-## Wyspy klienckie (hybryda)
+## Client islands (hybrid)
 
-`<medley-island name="x">` to granica, za którą serwer nie zarządza DOM. Deweloper rozszerza bazę
-`window.medley.MedleyIsland` i rejestruje klasę:
+`<medley-island name="x">` is a boundary behind which the server does not manage the DOM. The
+developer extends the base `window.medley.MedleyIsland` and registers a class:
 
 ```js
 class Sparkline extends window.medley.MedleyIsland {
-  mount()           { /* renderuj lokalnie; obsłuż interakcje, zero round-tripów */ }
-  onProp(name, val) { /* serwer wypchnął props (patch atrybutu hosta) */ }
-  // this.commit(action, payload) — utrwal gruboziarnisty stan na serwerze
+  mount()           { /* render locally; handle interactions, zero round-trips */ }
+  onProp(name, val) { /* the server pushed props (a host-attribute patch) */ }
+  // this.commit(action, payload) — persist coarse state on the server
 }
 window.medley.registerIsland("sparkline", Sparkline);
 ```
 
-Po stronie serwera: `@MedleyIsland("sparkline")` z metodami `@IslandAction` (moduł starter).
-`this.commit(action, payload)` wysyła wiadomość `island-commit`, która mutuje `@State`
-komponentu-właściciela; jego re-render wypycha zmienione props z powrotem na host. Wyspa działa
-autonomicznie — serwer dostaje tylko rzadkie commity, co realizuje cel „mało stanu na serwerze"
-dla interakcji wysokiej częstotliwości. Działający przykład: wyspa **sparkline** w
-`examples/counter-demo` (trasa `/chart`).
+On the server side: `@MedleyIsland("sparkline")` with `@IslandAction` methods (the starter module).
+`this.commit(action, payload)` sends an `island-commit` message that mutates the owner component's
+`@State`; its re-render pushes the changed props back onto the host. The island runs autonomously —
+the server only receives rare commits, which fulfills the "little server state" goal for
+high-frequency interaction. A working example: the **sparkline** island in
+`examples/counter-demo` (route `/chart`).
 
 ---
 
-## Stan implementacji PoC
+## PoC implementation status
 
 | Element | Status |
 |---|---|
-| VNode + parser szablonu + evaluator | ✅ gotowe (rdzeń: **57 testów**) |
-| Differ + patche + serializer HTML | ✅ gotowe |
-| Model komponentu (@State/@Param/@Action) | ✅ gotowe |
-| medley.js (hydratacja, WS, patch, reconnect, wyspy) | ✅ gotowe |
-| Pętla end-to-end po WebSocket | ✅ **udowodniona** (tools/dev-server oraz realny Spring WS) |
-| Starter: autokonfiguracja, WS, SSR, sesja, routing (**Etap 2**) | ✅ gotowe (starter: **19 testów**) |
-| Wyspy klienckie — `MedleyIsland`/`@MedleyIsland`/`@IslandAction` (**Etap 3**) | ✅ gotowe |
-| Demo: counter (`/counter`) + sparkline island (`/chart`) | ✅ gotowe |
-| Biblioteka komponentów, walidacja, security | ⏳ Etap 4 |
-| Format binarny patchy, Redis dla sesji, metryki | ⏳ Etap 5 |
+| VNode + template parser + evaluator | ✅ done |
+| Differ + patches + HTML serializer | ✅ done |
+| Component model (@State/@Param/@Action) | ✅ done |
+| medley.js (hydration, WS, patch, reconnect, islands) | ✅ done |
+| End-to-end loop over WebSocket | ✅ **proven** (tools/dev-server and a real Spring WS) |
+| Starter: auto-configuration, WS, SSR, session, routing (**Stage 2**) | ✅ done |
+| Client islands — `MedleyIsland`/`@MedleyIsland`/`@IslandAction` (**Stage 3**) | ✅ done |
+| Demo: counter (`/counter`) + sparkline island (`/chart`) | ✅ done |
+| Component library, validation, nested components (**Stage 4**) | 🚧 in progress |
+| Binary patch format, Redis session backend, metrics | ⏳ Stage 5 |
 
-Pełny `./gradlew build` jest zielony: 3 moduły kompilują się, **57 testów rdzenia + 19 startera**
-przechodzi, a bootJar demonstracji się buduje.
+The full `./gradlew build` is green: 3 modules compile, **114 core + 30 starter tests** pass, and the
+demo bootJar builds.
 
 ---
 
-## Testy rdzenia
+## Core tests
 
 ```bash
 ./gradlew :medley-core:test
 ```
 
-57 testów jednostkowych pokrywających: evaluator wyrażeń, parser szablonów, renderer (w tym
-stabilność placeholdera `*if`, klucze `*for` i nieprzezroczysty host `<medley-island>`), differ
-(w tym rekoncyliacja po kluczach), serializer HTML (w tym escaping XSS) oraz pełną pętlę
-komponentu render → akcja → diff.
+Unit tests covering: the expression evaluator, the template parser, the renderer (including `*if`
+placeholder stability, `*for` keys and the opaque `<medley-island>`/`<medley-component>` hosts), the
+differ (including keyed reconciliation and the opaque-boundary skip), the HTML serializer (including
+XSS escaping) and the full component render → action → diff loop.
 
-## Weryfikacja end-to-end po WebSocket (bez Springa)
+## End-to-end verification over WebSocket (without Spring)
 
-Etap 1 został udowodniony „na drucie" lekkim harnessem JDK-only — patrz
-**`tools/dev-server/README.md`**. Serwer renderuje SSR, serwuje `medley.js`, obsługuje
-WebSocket; skryptowany klient wysyła `increment`/`decrement`/`reset` i drukuje zwracane
-patche. Kluczowy wynik: drugi `increment` zwraca **dokładnie jeden** patch
+Stage 1 was proven "on the wire" with a lightweight JDK-only harness — see
+**`tools/dev-server/README.md`**. The server renders SSR, serves `medley.js`, handles the
+WebSocket; a scripted client sends `increment`/`decrement`/`reset` and prints the returned
+patches. The key result: the second `increment` returns **exactly one** patch
 `{"op":"text","id":"root.3.2","value":"2"}`.
 
 ---
 
-## Test rdzenia bez Springa
+## Core test without Spring
 
-Sam silnik można uruchomić bez Springa (patrz `MEDLEY_DESIGN.md`, sekcja pętli). Rdzeń nie
-ma zależności poza Jacksonem.
+The engine alone can run without Spring (see `MEDLEY_DESIGN.md`, the loop section). The core has no
+dependency beyond Jackson.
 
-Pełny dokument projektowy: **MEDLEY_DESIGN.md**.
+The full design document: **MEDLEY_DESIGN.md**.
 
 ---
 
-## Praca z Claude Code (wirtualny zespół)
+## Working with Claude Code (a virtual team)
 
-Projekt jest skonfigurowany do pracy z Claude Code jako mały zespół inżynierski. Po otwarciu
-repo w IDE i uruchomieniu `claude` z katalogu głównego, Claude czyta `CLAUDE.md` (konstytucja
-projektu) i konfigurację w `.claude/`.
+The project is configured to work with Claude Code as a small engineering team. After opening the
+repo in the IDE and running `claude` from the root directory, Claude reads `CLAUDE.md` (the project
+constitution) and the configuration in `.claude/`.
 
-Role (subagenci): **@architect**, **@developer**, **@tester**, **@reviewer**,
-**@product-owner**. Komendy: `/project-status`, `/next-stage`, `/verify-all`, `/code-review`,
-`/medley-add-component <Name> [route]`. Wiedza domenowa jest w `.claude/skills/` i ładuje się
-automatycznie, gdy pasuje do zadania.
+Roles (subagents): **@architect**, **@developer**, **@tester**, **@reviewer**,
+**@product-owner**. Commands: `/project-status`, `/next-stage`, `/verify-all`, `/code-review`,
+`/medley-add-component <Name> [route]`. Domain knowledge is in `.claude/skills/` and loads
+automatically when it matches a task.
 
-Szczegóły: **.claude/README.md**.
+Details: **.claude/README.md**.

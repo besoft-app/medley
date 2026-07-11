@@ -1,9 +1,9 @@
 <div class="table-demo">
   <table>
-    <thead><tr><th>Nazwa</th><th>Ilość</th></tr></thead>
+    <thead><tr><th>Name</th><th>Quantity</th></tr></thead>
     <tbody><tr *for="row : rows" key="row.id"><td>{{ row.name }}</td><td>{{ row.qty }}</td></tr></tbody>
   </table>
-  <button @click="addRow">dodaj wiersz</button>
-  <button @click="removeFirst" *if="!empty">usuń pierwszy</button>
-  <button @click="bumpFirst" *if="!empty">+1 ilość (pierwszy)</button>
+  <button @click="addRow">add row</button>
+  <button @click="removeFirst" *if="!empty">remove first</button>
+  <button @click="bumpFirst" *if="!empty">+1 quantity (first)</button>
 </div>

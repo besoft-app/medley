@@ -27,13 +27,13 @@ public class TableComponent extends Component {
     private int seq = 3;
 
     @State List<Row> rows = new ArrayList<>(List.of(
-            new Row("1", "Widżet", 2),
+            new Row("1", "Widget", 2),
             new Row("2", "Sprocket", 5),
-            new Row("3", "Gadżet", 1)));
+            new Row("3", "Gadget", 1)));
 
     @Action void addRow() {
         seq++;
-        rows.add(new Row(String.valueOf(seq), "Pozycja #" + seq, 1));
+        rows.add(new Row(String.valueOf(seq), "Item #" + seq, 1));
     }
 
     @Action void removeFirst() {
