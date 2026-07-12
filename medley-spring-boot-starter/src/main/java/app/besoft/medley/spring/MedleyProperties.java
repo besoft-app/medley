@@ -63,10 +63,23 @@ public class MedleyProperties {
          */
         private int maxMessageBytes = 65536;
 
+        /**
+         * Require an authenticated principal on the WebSocket handshake (Stage 4, increment 5b). When
+         * {@code true}, a handshake with no authenticated user is rejected (401). Default {@code false}
+         * — apps without authentication (or that already gate the SSR route) are unaffected. The
+         * principal, when present, is always bound onto the socket regardless of this flag.
+         */
+        private boolean requireAuthenticatedHandshake = false;
+
         public List<String> getAllowedOrigins() { return allowedOrigins; }
         public void setAllowedOrigins(List<String> allowedOrigins) { this.allowedOrigins = allowedOrigins; }
 
         public int getMaxMessageBytes() { return maxMessageBytes; }
         public void setMaxMessageBytes(int maxMessageBytes) { this.maxMessageBytes = maxMessageBytes; }
+
+        public boolean isRequireAuthenticatedHandshake() { return requireAuthenticatedHandshake; }
+        public void setRequireAuthenticatedHandshake(boolean requireAuthenticatedHandshake) {
+            this.requireAuthenticatedHandshake = requireAuthenticatedHandshake;
+        }
     }
 }
