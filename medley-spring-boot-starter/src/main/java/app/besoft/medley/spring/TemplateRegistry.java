@@ -2,6 +2,7 @@ package app.besoft.medley.spring;
 
 import app.besoft.medley.core.component.Annotations.MedleyComponent;
 import app.besoft.medley.core.component.Component;
+import app.besoft.medley.core.component.OutputBinder;
 import app.besoft.medley.core.component.ParamBinder;
 import app.besoft.medley.core.template.ChildComponentFactory;
 import app.besoft.medley.core.template.ComponentHost;
@@ -81,6 +82,9 @@ public class TemplateRegistry {
             return null;
         }
         ParamBinder.inject(child, params);
+        // Ensure every @Output field holds a (no-op) emitter before onInit, so emitting during onInit
+        // is a safe no-op rather than an NPE; MedleySession then binds the real owner-action sinks.
+        OutputBinder.inject(child, java.util.Map.of());
         child.onInit();
         return new ChildComponentFactory.Child(child, rendererFor(child.getClass()));
     }
