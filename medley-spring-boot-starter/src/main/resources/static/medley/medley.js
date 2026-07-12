@@ -29,6 +29,7 @@
   let socket = null;
   let reconnectDelay = 500;
   const maxReconnectDelay = 8000;
+  let hasConnected = false; // becomes true after the first successful open; later opens are reconnects
 
   function wsUrl(path) {
     const proto = location.protocol === "https:" ? "wss:" : "ws:";
@@ -40,6 +41,12 @@
 
     socket.addEventListener("open", function () {
       reconnectDelay = 500; // reset backoff on success
+      // On a reconnect (not the first open), request a full resync: patches sent while we were
+      // disconnected were missed, so ask the server to replace the root with its current state.
+      if (hasConnected) {
+        socket.send(JSON.stringify({ type: "resync" }));
+      }
+      hasConnected = true;
     });
 
     socket.addEventListener("message", function (event) {

@@ -62,6 +62,18 @@ public final class ComponentInstance {
     }
 
     /**
+     * Re-render this instance's subtree fresh and return its HTML, updating the diff baseline. Unlike
+     * {@link #renderInitialHtml} it does <em>not</em> re-run {@code onInit} — the instance is already
+     * mounted. Used for reconnect resync (Stage 4, increment 6b): the render re-embeds each nested
+     * child's <em>current</em> state (via the host), so the returned HTML reflects the whole current
+     * tree, and {@code lastTree} becomes the baseline the client is now in sync with.
+     */
+    public String resyncHtml() {
+        lastTree = renderer.render(id, component, host);
+        return HtmlSerializer.serialize(lastTree);
+    }
+
+    /**
      * Render (or re-render) this instance's own subtree at the given expansion depth, updating the
      * diff baseline, and return it. Used by a {@link ComponentHost} to mount a nested child — {@code
      * onInit} is <em>not</em> called here (a child's lifecycle is started by the factory), and depth

@@ -73,8 +73,13 @@ public class MedleyWebSocketHandler extends TextWebSocketHandler {
         }
 
         JsonNode msg = mapper.readTree(message.getPayload());
-        if ("island-commit".equals(msg.path("type").asText(null))) {
+        String type = msg.path("type").asText(null);
+        if ("island-commit".equals(type)) {
             handleIslandCommit(wsSession, medley, msg);
+            return;
+        }
+        if ("resync".equals(type)) {
+            handleResync(wsSession, medley);
             return;
         }
 
@@ -151,6 +156,33 @@ public class MedleyWebSocketHandler extends TextWebSocketHandler {
                 sendError(wsSession, "Island commit '" + island + "." + action + "' failed");
                 return;
             }
+            wsSession.sendMessage(new TextMessage(encoder.encode(patches)));
+        }
+    }
+
+    /**
+     * Reconnect resync (Stage 4, increment 6b): re-render the root fresh and reply with a single
+     * {@code replace} of the root subtree, so a client that reconnected after a drop (and may have
+     * missed patches) is brought back into a guaranteed-consistent state. A missing root (stale
+     * session after a restart) falls back to a full page reload.
+     */
+    private void handleResync(WebSocketSession wsSession, MedleySession medley) throws Exception {
+        synchronized (wsSession) {
+            ComponentInstance root = medley.get("root");
+            if (root == null) {
+                wsSession.sendMessage(new TextMessage("{\"op\":\"reload\"}"));
+                return;
+            }
+            String html;
+            try {
+                medley.resetRenderCycle();
+                html = root.resyncHtml();
+            } catch (RuntimeException e) {
+                log.warn("Medley resync failed", e);
+                sendError(wsSession, "Resync failed");
+                return;
+            }
+            List<Patch> patches = List.of(new Patch.Replace(root.id(), html));
             wsSession.sendMessage(new TextMessage(encoder.encode(patches)));
         }
     }
