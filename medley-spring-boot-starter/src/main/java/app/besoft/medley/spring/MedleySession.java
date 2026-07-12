@@ -2,11 +2,13 @@ package app.besoft.medley.spring;
 
 import app.besoft.medley.core.component.Component;
 import app.besoft.medley.core.component.ComponentInstance;
+import app.besoft.medley.core.component.OutputBinder;
 import app.besoft.medley.core.component.ParamBinder;
 import app.besoft.medley.core.diff.IdPaths;
 import app.besoft.medley.core.diff.Patch;
 import app.besoft.medley.core.template.ChildComponentFactory;
 import app.besoft.medley.core.template.ComponentHost;
+import app.besoft.medley.core.template.TemplateException;
 import app.besoft.medley.core.template.TemplateRenderer;
 import app.besoft.medley.core.vnode.VNode;
 
@@ -17,6 +19,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Consumer;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -112,7 +115,8 @@ public class MedleySession implements ComponentHost, HttpSessionBindingListener 
      * {@link app.besoft.medley.core.template.TemplateException}.
      */
     @Override
-    public VNode mountChild(String childId, String name, Map<String, Object> params, int depth) {
+    public VNode mountChild(String childId, String name, Map<String, Object> params,
+                            Map<String, String> outputs, int depth) {
         thisPassTouched.add(childId);
         ComponentInstance existing = instances.get(childId);
         if (existing != null) {
@@ -122,21 +126,82 @@ public class MedleySession implements ComponentHost, HttpSessionBindingListener 
                 cascade.addAll(existing.renderToPatches());
                 lastParams.put(childId, new LinkedHashMap<>(params));
             }
-            return existing.currentTree();
+            return existing.currentTree(); // outputs are static — wired once at creation, not on reuse
         }
         ChildComponentFactory.Child created = templates.createChild(name, params);
         if (created == null) {
             return null;
         }
         enforceCap(childId);
-        ComponentInstance child = new ComponentInstance(
-                childId, (Component) created.component(), created.renderer(), this);
+        Component childComponent = (Component) created.component();
+        // Wire child→parent callbacks: each bound @Output emitter invokes the owner action, buffering
+        // the owner's patches into the cascade so they ride back with the child's own response.
+        wireOutputs(childId, childComponent, outputs);
+        ComponentInstance child = new ComponentInstance(childId, childComponent, created.renderer(), this);
         // Render before registering, so a template that fails to render does not leave a
         // half-mounted instance (with a null currentTree) behind for a later action to hit.
         VNode tree = child.renderTree(depth);
         instances.put(childId, child);
         lastParams.put(childId, new LinkedHashMap<>(params));
         return tree;
+    }
+
+    /**
+     * Wire a freshly-created child's {@code @Output} emitters to its parent's actions, per the
+     * boundary's {@code @event} bindings ({@code output name -> "ownerAction($event)"}). An unbound
+     * output stays a no-op. When a callback fires it invokes the owner action in-process; the owner's
+     * resulting patches are buffered into the {@code cascade}, so the WebSocket handler drains and
+     * merges them with the child's own patches into one response — no new wire message needed.
+     */
+    private void wireOutputs(String childId, Component child, Map<String, String> outputs) {
+        Map<String, Consumer<Object>> sinks = new LinkedHashMap<>();
+        if (outputs != null && !outputs.isEmpty()) {
+            String ownerId = IdPaths.ownerComponentId(childId);
+            for (Map.Entry<String, String> e : outputs.entrySet()) {
+                OutputBinding binding = OutputBinding.parse(e.getValue());
+                sinks.put(e.getKey(), payload -> {
+                    ComponentInstance owner = instances.get(ownerId);
+                    if (owner == null) {
+                        return; // owner evicted — emitting is a no-op
+                    }
+                    List<Patch> ownerPatches = binding.passesPayload()
+                            ? owner.invokeAction(binding.action(), payload)
+                            : owner.invokeAction(binding.action());
+                    cascade.addAll(ownerPatches);
+                });
+            }
+        }
+        // Always inject: this ensures every @Output field holds an emitter (no-op if unbound), so the
+        // child can safely emit even when the parent bound nothing.
+        OutputBinder.inject(child, sinks);
+    }
+
+    /**
+     * A parsed {@code @output} boundary binding: the owner action to invoke and whether the emitted
+     * payload is passed. Supports {@code "action"} (bare → zero-arg owner action) and
+     * {@code "action($event)"} (payload passed, coerced to the action's parameter type by the owner).
+     */
+    private record OutputBinding(String action, boolean passesPayload) {
+        static OutputBinding parse(String binding) {
+            String b = binding.trim();
+            int lparen = b.indexOf('(');
+            if (lparen < 0) {
+                return new OutputBinding(b, false);
+            }
+            String action = b.substring(0, lparen).trim();
+            String args = b.substring(lparen + 1, b.endsWith(")") ? b.length() - 1 : b.length()).trim();
+            if (action.isEmpty()) {
+                throw new TemplateException("Invalid @Output binding (missing action): '" + binding + "'");
+            }
+            if (args.isEmpty()) {
+                return new OutputBinding(action, false);
+            }
+            if (args.equals("$event")) {
+                return new OutputBinding(action, true);
+            }
+            throw new TemplateException("Unsupported @Output binding args '" + args + "' in '" + binding
+                    + "' — use $event or no arguments");
+        }
     }
 
     /** Start a fresh render cycle: clear the cascade buffer and the touched-set left from a previous

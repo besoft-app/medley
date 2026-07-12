@@ -1,0 +1,5 @@
+<div class="page">
+  <h2>Editor (child &rarr; parent callback)</h2>
+  <p>Last saved: <strong>{{ lastSaved }}</strong> &middot; saved {{ saveCount }} time(s)</p>
+  <medley-component name="text-editor" @save="onSave($event)"></medley-component>
+</div>
