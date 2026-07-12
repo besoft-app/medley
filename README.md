@@ -1,5 +1,10 @@
 # Medley
 
+> Medley is a server-driven, hybrid UI framework for Spring Boot (Blazor Server / Vaadin Flow in
+> spirit). Component logic and state live on the server; the browser is a thin client applying UI
+> diffs (patches) over a WebSocket. Heavy interactions run in autonomous client islands. Java 21,
+> hand-written template engine, VNode diffing.
+
 A server-driven, hybrid UI framework for Spring Boot — working in the spirit of Blazor Server,
 similar in operation to Vaadin Flow. Component logic and state live on the server by default;
 only a **diff** (a list of patches) travels over the wire, not the whole HTML. For heavy
