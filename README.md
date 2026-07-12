@@ -180,25 +180,7 @@ patches. The key result: the second `increment` returns **exactly one** patch
 
 ## Core test without Spring
 
-The engine alone can run without Spring (see `MEDLEY_DESIGN.md`, the loop section). The core has no
-dependency beyond Jackson.
-
-The full design document: **MEDLEY_DESIGN.md**.
-
----
-
-## Working with Claude Code (a virtual team)
-
-The project is configured to work with Claude Code as a small engineering team. After opening the
-repo in the IDE and running `claude` from the root directory, Claude reads `CLAUDE.md` (the project
-constitution) and the configuration in `.claude/`.
-
-Roles (subagents): **@architect**, **@developer**, **@tester**, **@reviewer**,
-**@product-owner**. Commands: `/project-status`, `/next-stage`, `/verify-all`, `/code-review`,
-`/medley-add-component <Name> [route]`. Domain knowledge is in `.claude/skills/` and loads
-automatically when it matches a task.
-
-Details: **.claude/README.md**.
+The engine alone can run without Spring — the core has no dependency beyond Jackson.
 
 ---
 
