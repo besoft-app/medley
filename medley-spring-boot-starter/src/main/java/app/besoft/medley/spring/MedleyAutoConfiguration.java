@@ -97,7 +97,7 @@ public class MedleyAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public MedleyHandshakeInterceptor medleyHandshakeInterceptor() {
-        return new MedleyHandshakeInterceptor();
+        return new MedleyHandshakeInterceptor(properties.getSecurity().isRequireAuthenticatedHandshake());
     }
 
     // MedleyWebSocketConfig is @Import-ed (not a @Bean here) so its @EnableWebSocket
