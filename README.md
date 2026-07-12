@@ -1,5 +1,10 @@
 # Medley
 
+> Medley is a server-driven, hybrid UI framework for Spring Boot (Blazor Server / Vaadin Flow in
+> spirit). Component logic and state live on the server; the browser is a thin client applying UI
+> diffs (patches) over a WebSocket. Heavy interactions run in autonomous client islands. Java 21,
+> hand-written template engine, VNode diffing.
+
 A server-driven, hybrid UI framework for Spring Boot — working in the spirit of Blazor Server,
 similar in operation to Vaadin Flow. Component logic and state live on the server by default;
 only a **diff** (a list of patches) travels over the wire, not the whole HTML. For heavy
@@ -175,22 +180,22 @@ patches. The key result: the second `increment` returns **exactly one** patch
 
 ## Core test without Spring
 
-The engine alone can run without Spring (see `MEDLEY_DESIGN.md`, the loop section). The core has no
-dependency beyond Jackson.
-
-The full design document: **MEDLEY_DESIGN.md**.
+The engine alone can run without Spring — the core has no dependency beyond Jackson.
 
 ---
 
-## Working with Claude Code (a virtual team)
+## License
 
-The project is configured to work with Claude Code as a small engineering team. After opening the
-repo in the IDE and running `claude` from the root directory, Claude reads `CLAUDE.md` (the project
-constitution) and the configuration in `.claude/`.
+Medley is licensed under the **Apache License, Version 2.0** — the standard license across the
+Spring ecosystem. You may use, modify, and embed it in your own applications (including closed-source
+and commercial ones), subject to the terms of the license, which include an explicit patent grant.
 
-Roles (subagents): **@architect**, **@developer**, **@tester**, **@reviewer**,
-**@product-owner**. Commands: `/project-status`, `/next-stage`, `/verify-all`, `/code-review`,
-`/medley-add-component <Name> [route]`. Domain knowledge is in `.claude/skills/` and loads
-automatically when it matches a task.
+See the [`LICENSE`](LICENSE) file for the full text and [`NOTICE`](NOTICE) for attribution.
 
-Details: **.claude/README.md**.
+```
+Copyright 2026 Besoft
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
+```
