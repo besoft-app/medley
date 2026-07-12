@@ -29,6 +29,7 @@
   let socket = null;
   let reconnectDelay = 500;
   const maxReconnectDelay = 8000;
+  let hasConnected = false; // becomes true after the first successful open; later opens are reconnects
 
   function wsUrl(path) {
     const proto = location.protocol === "https:" ? "wss:" : "ws:";
@@ -40,6 +41,12 @@
 
     socket.addEventListener("open", function () {
       reconnectDelay = 500; // reset backoff on success
+      // On a reconnect (not the first open), request a full resync: patches sent while we were
+      // disconnected were missed, so ask the server to replace the root with its current state.
+      if (hasConnected) {
+        socket.send(JSON.stringify({ type: "resync" }));
+      }
+      hasConnected = true;
     });
 
     socket.addEventListener("message", function (event) {
@@ -378,12 +385,6 @@
   }
 
   // ---- public API + bootstrap ----------------------------------------------
-  window.medley = {
-    MedleyIsland: MedleyIsland,
-    registerIsland: registerIsland,
-    _sendEvent: sendEvent
-  };
-
   function boot() {
     const rootEl = document.getElementById("medley-root");
     if (!rootEl) {
@@ -395,9 +396,31 @@
     connect(wsPath);
   }
 
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", boot);
-  } else {
-    boot();
+  // Browser: publish the island API and boot. Guarded on window/document so requiring this file
+  // under plain Node (the JS test harness) is side-effect-free — no boot, no WebSocket.
+  if (typeof window !== "undefined" && typeof document !== "undefined") {
+    window.medley = {
+      MedleyIsland: MedleyIsland,
+      registerIsland: registerIsland,
+      _sendEvent: sendEvent
+    };
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", boot);
+    } else {
+      boot();
+    }
+  }
+
+  // Node (test harness only): expose the pure helpers so they can be exercised by node:test.
+  // Under a browser `module` is undefined, so this is a no-op there.
+  if (typeof module !== "undefined" && module.exports) {
+    module.exports = {
+      parseBinding: parseBinding,
+      extractArg: extractArg,
+      ownerComponentId: ownerComponentId,
+      applyPatch: applyPatch,
+      applyPatches: applyPatches,
+      htmlToElement: htmlToElement
+    };
   }
 })();

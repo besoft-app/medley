@@ -1,0 +1,7 @@
+{
+  "private": true,
+  "description": "node:test suite for the medley.js client runtime. Zero npm dependencies — uses Node's built-in test runner. Run from this directory: `node --test` (Node 20+).",
+  "scripts": {
+    "test": "node --test"
+  }
+}

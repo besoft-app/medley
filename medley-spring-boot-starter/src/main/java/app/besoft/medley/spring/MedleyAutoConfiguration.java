@@ -90,13 +90,14 @@ public class MedleyAutoConfiguration {
     @ConditionalOnMissingBean
     public MedleyWebSocketHandler medleyWebSocketHandler(ObjectMapper mapper, PatchEncoder encoder,
                                                          IslandRegistry islands) {
-        return new MedleyWebSocketHandler(mapper, encoder, islands);
+        return new MedleyWebSocketHandler(mapper, encoder, islands,
+                properties.getSecurity().getMaxMessageBytes());
     }
 
     @Bean
     @ConditionalOnMissingBean
     public MedleyHandshakeInterceptor medleyHandshakeInterceptor() {
-        return new MedleyHandshakeInterceptor();
+        return new MedleyHandshakeInterceptor(properties.getSecurity().isRequireAuthenticatedHandshake());
     }
 
     // MedleyWebSocketConfig is @Import-ed (not a @Bean here) so its @EnableWebSocket
