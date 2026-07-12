@@ -51,7 +51,8 @@ class NestedComponentRenderTest {
         }
 
         @Override
-        public VNode mountChild(String childId, String name, Map<String, Object> params, int depth) {
+        public VNode mountChild(String childId, String name, Map<String, Object> params,
+                                Map<String, String> outputs, int depth) {
             if (!comps.containsKey(name)) return null;
             Mounted existing = mounted.get(childId);
             if (existing != null) return existing.tree(); // reuse — @State survives a parent re-render

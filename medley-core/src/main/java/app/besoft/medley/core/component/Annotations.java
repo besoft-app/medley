@@ -35,4 +35,14 @@ public final class Annotations {
     @Retention(RetentionPolicy.RUNTIME)
     @Target(ElementType.METHOD)
     public @interface Action {}
+
+    /**
+     * A child→parent callback channel. Declared on an {@link EventEmitter} field; the child fires it
+     * from an {@code @Action} ({@code save.emit(value)}), and a parent binds it on the child's
+     * {@code <medley-component>} boundary via {@code @outputName="ownerAction($event)"} (the
+     * {@code @event} grammar). An output the parent did not bind is a no-op.
+     */
+    @Retention(RetentionPolicy.RUNTIME)
+    @Target(ElementType.FIELD)
+    public @interface Output {}
 }

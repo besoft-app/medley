@@ -149,11 +149,13 @@ high-frequency interaction. A working example: the **sparkline** island in
 | Starter: auto-configuration, WS, SSR, session, routing (**Stage 2**) | ✅ done |
 | Client islands — `MedleyIsland`/`@MedleyIsland`/`@IslandAction` (**Stage 3**) | ✅ done |
 | Demo: counter (`/counter`) + sparkline island (`/chart`) | ✅ done |
-| Component library, validation, nested components (**Stage 4**) | 🚧 in progress |
+| Keyed `*for`, input-value binding, form validation, partials (**Stage 4**) | ✅ done |
+| Nested server components + child→parent callbacks (`<medley-component>`, `@Param`/`@Output`) | ✅ done |
+| Security (WS origin / auth / inbound hardening), reconnect resync + eviction (**Stage 4**) | ✅ done |
 | Binary patch format, Redis session backend, metrics | ⏳ Stage 5 |
 
-The full `./gradlew build` is green: 3 modules compile, **114 core + 30 starter tests** pass, and the
-demo bootJar builds.
+The full `./gradlew build` is green: 3 modules compile, **126 core + 53 starter tests** pass (plus a
+dependency-free 24-test `medley.js` harness, run separately), and the demo bootJar builds.
 
 ---
 

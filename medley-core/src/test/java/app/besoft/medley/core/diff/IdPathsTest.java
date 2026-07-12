@@ -1,6 +1,8 @@
 package app.besoft.medley.core.diff;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
@@ -47,5 +49,37 @@ class IdPathsTest {
     void nullsAreNotDescendant() {
         assertFalse(IdPaths.isSelfOrDescendant(null, "root.1"));
         assertFalse(IdPaths.isSelfOrDescendant("root.1", null));
+    }
+
+    // --- ownerComponentId: recover the owning component instance id from a nested child id
+    //     (childId = hostSlot + "::" + name). Used to route a child→parent callback to its owner.
+
+    @Test
+    void ownerOfRootChildIsRoot() {
+        assertEquals("root", IdPaths.ownerComponentId("root.0::counter"));
+        assertEquals("root", IdPaths.ownerComponentId("root.1.2::editor"));
+    }
+
+    @Test
+    void ownerOfKeyedRootChildIsRoot() {
+        assertEquals("root", IdPaths.ownerComponentId("root.0[1]::counter"));
+    }
+
+    @Test
+    void ownerOfBoundaryAtOwnerRootSlotIsThatOwner() {
+        assertEquals("root", IdPaths.ownerComponentId("root::editor"));
+    }
+
+    @Test
+    void ownerOfNestedChildStripsTheInnerSlot() {
+        assertEquals("root.2::editor", IdPaths.ownerComponentId("root.2::editor.1::inner"));
+        assertEquals("root.0[1]::card", IdPaths.ownerComponentId("root.0[1]::card.3::badge"));
+    }
+
+    @Test
+    void ownerOfNonBoundaryIdIsNull() {
+        assertNull(IdPaths.ownerComponentId("root"));
+        assertNull(IdPaths.ownerComponentId("root.1.2"));
+        assertNull(IdPaths.ownerComponentId(null));
     }
 }

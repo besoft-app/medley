@@ -279,8 +279,10 @@ public final class TemplateRenderer {
             params.put(e.getKey(), ownerEval.eval(e.getValue()));
         }
 
+        // An @event on the boundary is a child→parent callback binding (output name → owner action),
+        // e.g. @save="onSave($event)". Passed to the host, which wires the child's @Output emitters.
         String childId = hostId + "::" + name;
-        VNode childRoot = host.mountChild(childId, name, params, depth + 1);
+        VNode childRoot = host.mountChild(childId, name, params, el.events(), depth + 1);
         if (childRoot == null) {
             throw new TemplateException("Unknown component: '" + name + "'");
         }
