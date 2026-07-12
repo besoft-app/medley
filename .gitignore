@@ -7,3 +7,6 @@ build/
 *.iml
 .vscode/
 .DS_Store
+.claude/
+CLAUDE.md
+MEDLEY_DESIGN.md
