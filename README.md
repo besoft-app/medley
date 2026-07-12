@@ -199,3 +199,21 @@ Roles (subagents): **@architect**, **@developer**, **@tester**, **@reviewer**,
 automatically when it matches a task.
 
 Details: **.claude/README.md**.
+
+---
+
+## License
+
+Medley is licensed under the **Apache License, Version 2.0** — the standard license across the
+Spring ecosystem. You may use, modify, and embed it in your own applications (including closed-source
+and commercial ones), subject to the terms of the license, which include an explicit patent grant.
+
+See the [`LICENSE`](LICENSE) file for the full text and [`NOTICE`](NOTICE) for attribution.
+
+```
+Copyright 2026 Besoft
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
+```
