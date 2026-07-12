@@ -21,6 +21,9 @@ import java.util.concurrent.ConcurrentHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import jakarta.servlet.http.HttpSessionBindingEvent;
+import jakarta.servlet.http.HttpSessionBindingListener;
+
 /**
  * Holds the live component instances for a single user session, and coordinates nested children.
  *
@@ -51,11 +54,17 @@ import org.slf4j.LoggerFactory;
  * patch HTML). {@link Component#onDestroy()} cascades to descendants. A per-session component cap
  * (runaway guard) fails fast on mount.</p>
  *
+ * <p><b>Lifecycle (Stage 4, increment 6a):</b> the session is held as an HTTP session attribute, so
+ * when the HTTP session is invalidated or times out the container calls {@link #valueUnbound}, which
+ * releases the whole component tree ({@code onDestroy} cascaded deepest-first). This ties Medley's
+ * server-side state to the servlet session timeout with no extra timer; recovery is the normal SSR
+ * path on the next visit.</p>
+ *
  * <p>Concurrency: events for one session are processed one at a time (see the WebSocket handler), so
  * a {@code ConcurrentHashMap} for the registry plus a single-threaded render loop per session keeps
  * diffs deterministic.</p>
  */
-public class MedleySession implements ComponentHost {
+public class MedleySession implements ComponentHost, HttpSessionBindingListener {
 
     private static final Logger log = LoggerFactory.getLogger(MedleySession.class);
 
@@ -184,6 +193,20 @@ public class MedleySession implements ComponentHost {
 
     public boolean contains(String id) {
         return instances.containsKey(id);
+    }
+
+    /** Release the whole component tree (root + all children), cascading {@link Component#onDestroy()}
+     *  deepest-first. Idempotent. Called when the owning HTTP session ends (see {@link #valueUnbound}). */
+    public void destroyAll() {
+        evictAll(new ArrayList<>(instances.keySet()));
+        lastParams.clear();
+    }
+
+    /** {@link HttpSessionBindingListener}: the HTTP session was invalidated or timed out — release the
+     *  tree. This is Medley's idle/session eviction (increment 6a); no extra timer is needed. */
+    @Override
+    public void valueUnbound(HttpSessionBindingEvent event) {
+        destroyAll();
     }
 
     /** Remove a subtree (an id and every descendant), cascading {@link Component#onDestroy()}. */
