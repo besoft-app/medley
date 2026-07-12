@@ -4,7 +4,7 @@ plugins {
 
 allprojects {
     group = "app.besoft.medley"
-    version = "0.1.0-SNAPSHOT"
+    version = "0.4.0"
 
     repositories {
         mavenCentral()
