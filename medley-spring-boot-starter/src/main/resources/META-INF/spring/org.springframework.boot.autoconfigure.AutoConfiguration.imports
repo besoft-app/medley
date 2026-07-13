@@ -1,1 +1,2 @@
 app.besoft.medley.spring.MedleyAutoConfiguration
+app.besoft.medley.spring.MedleyMetricsAutoConfiguration

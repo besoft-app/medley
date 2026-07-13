@@ -9,6 +9,14 @@ medley:
   websocket-path: /medley/ws
   template-location: templates/medley/
 
+# Expose the metrics endpoint so Medley's meters are visible at /actuator/metrics
+# (e.g. /actuator/metrics/medley.patches after clicking a demo).
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, metrics
+
 logging:
   level:
     app.besoft.medley: DEBUG

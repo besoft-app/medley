@@ -43,18 +43,25 @@ public class MedleyWebSocketHandler extends TextWebSocketHandler {
     private final PatchEncoder encoder;
     private final IslandRegistry islands;
     private final int maxMessageLength;
+    private final MedleyMetrics metrics;
 
     /** No inbound size cap — for PoC/tests that don't wire {@link MedleyProperties}. */
     public MedleyWebSocketHandler(ObjectMapper mapper, PatchEncoder encoder, IslandRegistry islands) {
-        this(mapper, encoder, islands, 0);
+        this(mapper, encoder, islands, 0, MedleyMetrics.NOOP);
     }
 
     public MedleyWebSocketHandler(ObjectMapper mapper, PatchEncoder encoder, IslandRegistry islands,
                                   int maxMessageLength) {
+        this(mapper, encoder, islands, maxMessageLength, MedleyMetrics.NOOP);
+    }
+
+    public MedleyWebSocketHandler(ObjectMapper mapper, PatchEncoder encoder, IslandRegistry islands,
+                                  int maxMessageLength, MedleyMetrics metrics) {
         this.mapper = mapper;
         this.encoder = encoder;
         this.islands = islands;
         this.maxMessageLength = maxMessageLength;
+        this.metrics = metrics;
     }
 
     @Override
@@ -92,11 +99,13 @@ public class MedleyWebSocketHandler extends TextWebSocketHandler {
 
         Object[] args = parseArgs(msg.path("args"));
 
+        long start = System.nanoTime();
         synchronized (wsSession) {
             ComponentInstance instance = medley.get(componentId);
             if (instance == null) {
                 // Stale client (e.g. after server restart). Tell it to reload for a fresh SSR.
                 wsSession.sendMessage(new TextMessage("{\"op\":\"reload\"}"));
+                metrics.recordMessage("action", 0, System.nanoTime() - start, true);
                 return;
             }
             List<Patch> patches;
@@ -114,9 +123,11 @@ public class MedleyWebSocketHandler extends TextWebSocketHandler {
                 // transport failure below is not misreported as an action failure.
                 log.warn("Medley action '{}' on component '{}' failed", action, componentId, e);
                 sendError(wsSession, "Action '" + action + "' failed");
+                metrics.recordMessage("action", 0, System.nanoTime() - start, false);
                 return;
             }
             wsSession.sendMessage(new TextMessage(encoder.encode(patches)));
+            metrics.recordMessage("action", patches.size(), System.nanoTime() - start, true);
         }
     }
 
@@ -137,10 +148,12 @@ public class MedleyWebSocketHandler extends TextWebSocketHandler {
         }
         JsonNode payload = msg.get("payload");
 
+        long start = System.nanoTime();
         synchronized (wsSession) {
             ComponentInstance instance = medley.get(componentId);
             if (instance == null) {
                 wsSession.sendMessage(new TextMessage("{\"op\":\"reload\"}"));
+                metrics.recordMessage("island-commit", 0, System.nanoTime() - start, true);
                 return;
             }
             List<Patch> patches;
@@ -154,9 +167,11 @@ public class MedleyWebSocketHandler extends TextWebSocketHandler {
                 log.warn("Medley island commit '{}.{}' on component '{}' failed",
                         island, action, componentId, e);
                 sendError(wsSession, "Island commit '" + island + "." + action + "' failed");
+                metrics.recordMessage("island-commit", 0, System.nanoTime() - start, false);
                 return;
             }
             wsSession.sendMessage(new TextMessage(encoder.encode(patches)));
+            metrics.recordMessage("island-commit", patches.size(), System.nanoTime() - start, true);
         }
     }
 
@@ -167,10 +182,12 @@ public class MedleyWebSocketHandler extends TextWebSocketHandler {
      * session after a restart) falls back to a full page reload.
      */
     private void handleResync(WebSocketSession wsSession, MedleySession medley) throws Exception {
+        long start = System.nanoTime();
         synchronized (wsSession) {
             ComponentInstance root = medley.get("root");
             if (root == null) {
                 wsSession.sendMessage(new TextMessage("{\"op\":\"reload\"}"));
+                metrics.recordMessage("resync", 0, System.nanoTime() - start, true);
                 return;
             }
             String html;
@@ -180,10 +197,12 @@ public class MedleyWebSocketHandler extends TextWebSocketHandler {
             } catch (RuntimeException e) {
                 log.warn("Medley resync failed", e);
                 sendError(wsSession, "Resync failed");
+                metrics.recordMessage("resync", 0, System.nanoTime() - start, false);
                 return;
             }
             List<Patch> patches = List.of(new Patch.Replace(root.id(), html));
             wsSession.sendMessage(new TextMessage(encoder.encode(patches)));
+            metrics.recordMessage("resync", patches.size(), System.nanoTime() - start, true);
         }
     }
 
