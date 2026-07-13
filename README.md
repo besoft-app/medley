@@ -152,9 +152,10 @@ high-frequency interaction. A working example: the **sparkline** island in
 | Keyed `*for`, input-value binding, form validation, partials (**Stage 4**) | ✅ done |
 | Nested server components + child→parent callbacks (`<medley-component>`, `@Param`/`@Output`) | ✅ done |
 | Security (WS origin / auth / inbound hardening), reconnect resync + eviction (**Stage 4**) | ✅ done |
-| Binary patch format, Redis session backend, metrics | ⏳ Stage 5 |
+| Metrics — optional Micrometer (`medley.messages` / `.message.duration` / `.patches`) (**Stage 5**) | ✅ done |
+| Binary/CBOR patch format, Redis session backend, dev tools, Maven archetype | ⏳ Stage 5 |
 
-The full `./gradlew build` is green: 3 modules compile, **126 core + 53 starter tests** pass (plus a
+The full `./gradlew build` is green: 3 modules compile, **126 core + 61 starter tests** pass (plus a
 dependency-free 24-test `medley.js` harness, run separately), and the demo bootJar builds.
 
 ---

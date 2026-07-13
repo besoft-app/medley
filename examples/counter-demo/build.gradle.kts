@@ -5,6 +5,9 @@ plugins {
 
 dependencies {
     implementation(project(":medley-spring-boot-starter"))
+    // Actuator brings Micrometer + a MeterRegistry, which activates Medley's optional metrics
+    // (medley.messages / medley.message.duration / medley.patches) at /actuator/metrics.
+    implementation(libs.spring.boot.starter.actuator)
 }
 
 tasks.named<org.springframework.boot.gradle.tasks.bundling.BootJar>("bootJar") {
