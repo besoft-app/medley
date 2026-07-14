@@ -64,7 +64,7 @@ class MedleyNestedComponentActionIntegrationTest {
         assertThat(ssr.getStatusCode().value()).isEqualTo(200);
         String html = ssr.getBody();
         assertThat(html).contains("data-medley-cid=\"" + CHILD_CID + "\"");
-        assertThat(html).as("child seeded from :start=seed").contains("count: 10");
+        assertThat(html).as("child seeded from :start=seed").contains(">10</medley-text>");
 
         String sessionCookie = ssr.getHeaders().getFirst(HttpHeaders.SET_COOKIE).split(";", 2)[0];
 

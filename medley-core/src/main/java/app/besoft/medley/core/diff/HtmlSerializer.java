@@ -3,6 +3,7 @@ package app.besoft.medley.core.diff;
 import app.besoft.medley.core.vnode.VNode;
 
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Serializes a VNode tree to HTML.
@@ -12,21 +13,53 @@ import java.util.Map;
  * element carries its {@code medley-id} as a data attribute so the client can address it,
  * and events are emitted as {@code data-medley-on-*} attributes that {@code medley.js}
  * reads during hydration.</p>
+ *
+ * <p><b>Dynamic text gets a host element.</b> The differ addresses a text update by the text node's own
+ * id, but a browser cannot address a bare text node — {@code medley.js} resolves a target only via
+ * {@code [data-medley-id]}, which matches elements — and the HTML parser additionally merges adjacent
+ * text runs into a single node. A {@link VNode.VText} that came from an interpolation is therefore
+ * emitted inside {@code <medley-text data-medley-id="…">} carrying <b>that text node's existing id</b>.
+ * The VNode tree, the id space, the differ and the wire are all unchanged; only the HTML gains a host,
+ * and setting its {@code textContent} is exactly the intended update. Static text stays bare, so no
+ * whitespace node becomes an element (list containers keep their keyed-only children).</p>
+ *
+ * <p>Raw-text elements are the exception: inside {@code <textarea>}/{@code <option>}/{@code <title>} a
+ * marker would be illegal, so {@code TemplateRenderer} merges their content into one text node carrying
+ * the <em>element's</em> id, and the patch addresses the element itself.</p>
  */
 public final class HtmlSerializer {
+
+    /** Tag hosting dynamic text. Styled {@code display: contents} so it generates no box. */
+    private static final String TEXT_MARKER_TAG = "medley-text";
+
+    /** Elements whose content model forbids the marker (see the class doc). */
+    private static final Set<String> RAW_TEXT_TAGS =
+            Set.of("textarea", "title", "option", "script", "style");
 
     private HtmlSerializer() {}
 
     public static String serialize(VNode node) {
         StringBuilder sb = new StringBuilder();
-        write(node, sb);
+        write(node, sb, null);
         return sb.toString();
     }
 
-    private static void write(VNode node, StringBuilder sb) {
+    private static void write(VNode node, StringBuilder sb, String parentTag) {
         switch (node) {
-            case VNode.VText t -> sb.append(escapeText(t.value()));
+            case VNode.VText t -> writeText(t, sb, parentTag);
             case VNode.VElement el -> writeElement(el, sb);
+        }
+    }
+
+    /** Dynamic text is wrapped so the client can address it; static text is written as-is. */
+    private static void writeText(VNode.VText t, StringBuilder sb, String parentTag) {
+        if (t.dynamic() && !RAW_TEXT_TAGS.contains(parentTag)) {
+            sb.append('<').append(TEXT_MARKER_TAG)
+              .append(" data-medley-id=\"").append(escapeAttr(t.id())).append("\">")
+              .append(escapeText(t.value()))
+              .append("</").append(TEXT_MARKER_TAG).append('>');
+        } else {
+            sb.append(escapeText(t.value()));
         }
     }
 
@@ -46,7 +79,7 @@ public final class HtmlSerializer {
         }
         sb.append('>');
         for (VNode child : el.children()) {
-            write(child, sb);
+            write(child, sb, el.tag());
         }
         sb.append("</").append(el.tag()).append('>');
     }

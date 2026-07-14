@@ -52,6 +52,21 @@ public sealed interface VNode permits VNode.VElement, VNode.VText {
         }
     }
 
-    /** A text node. */
-    record VText(String id, String value) implements VNode {}
+    /**
+     * A text node.
+     *
+     * @param dynamic true when this text came from an interpolation ({@code {{ … }}}), i.e. the differ
+     *                can emit a {@link app.besoft.medley.core.diff.Patch.SetText} for it. Such a node
+     *                <b>must be addressable in the DOM</b>, so the serializer gives it a host element
+     *                carrying this node's id (a browser cannot address a bare text node, and it merges
+     *                adjacent text runs into one). Static template text is never patched and so stays
+     *                bare text. See {@code HtmlSerializer}.
+     */
+    record VText(String id, String value, boolean dynamic) implements VNode {
+
+        /** Static template text — never patched, so it needs no addressable host. */
+        public VText(String id, String value) {
+            this(id, value, false);
+        }
+    }
 }
