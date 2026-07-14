@@ -36,15 +36,24 @@ element attribute/textContent/listener members), no HTML parsing.
   `formatOps`, `patchTargets`, the log ring buffer, `treeDepth`. The DOM half (overlay panel, flashing)
   needs a browser and is demo-verified.
 
+## Two DOMs, and which to use
+
+- **`html-parse.js`** — a real (if small) HTML fragment parser. Use it whenever a test depends on a patch
+  actually **finding its target in server output**. It models the two things a browser does and a shim
+  cannot fake: **adjacent text runs merge into one node**, and **only elements are addressable** by
+  `data-medley-id`. `dom-after-patch.test.js` uses it to apply a patch to real SSR markup (pinned on the
+  Java side by `MedleySsrTest`) and assert **what the user sees**.
+- **`dom-shim.js`** — a hand-built fake DOM, fine for exercising `applyPatch`'s mechanics in isolation.
+  **It cannot prove deliverability**: it lets a test fabricate an element carrying *any* id, including one
+  the server only gives to a **text node**. That is exactly how a critical bug shipped green — text
+  patches were addressed to text-node ids that no real DOM exposes, and every one was silently dropped in
+  the browser while this harness stayed green (MEDLEY_DESIGN §11a).
+
+**Lesson, worth repeating: assert the DOM after the patch, not the patch.**
+
 ## Deferred (follow-up)
 
-- `applyPatch` `replace` / `insert` and full `wireEvent` end-to-end need real HTML-fragment parsing
-  (`htmlToElement` → `<template>.innerHTML`), which the lightweight shim does not provide. Decide
-  between a hand-rolled fragment parser (zero dependency) or adding `jsdom` as a test-only devDependency
-  before covering those.
-- **The shim's blind spot, and why it matters** (see MEDLEY_DESIGN §11a): `dom-shim.js` lets a test
-  *fabricate* an element carrying any `data-medley-id`, including one the server would only ever give to
-  a **text node**. That is how a critical bug survived — the server addresses text patches by text-node
-  id, which no real DOM exposes, so every text patch was silently dropped in the browser while this
-  harness stayed green. A fragment parser added here must model the real thing: adjacent text runs merge,
-  and only elements are addressable by `data-medley-id`.
+- `applyPatch` `replace` / `insert` and full `wireEvent` end-to-end. `html-parse.js` now provides the
+  fragment parsing these need, but not yet the mutation surface (`insertBefore`, `replaceWith`) — a small
+  extension, no new dependency. Migrating `applyPatch.test.js` off `dom-shim.js` onto the real parser
+  (and then deleting the shim) would close the blind spot above for good.

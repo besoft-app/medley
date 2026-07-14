@@ -156,7 +156,7 @@ high-frequency interaction. A working example: the **sparkline** island in
 | Dev-tools — patch log, DOM flash, component-tree inspector (`medley.devtools.enabled`) (**Stage 5**) | ✅ done |
 | Binary/CBOR patch format, Redis session backend, Maven archetype | ⏳ Stage 5 |
 
-The full `./gradlew build` is green: 3 modules compile, **137 core + 73 starter tests** pass (plus a
+The full `./gradlew build` is green: 3 modules compile, **140 core + 73 starter tests** pass (plus a
 dependency-free 40-test client harness, run separately), and the demo bootJar builds.
 
 ---

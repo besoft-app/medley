@@ -26,6 +26,18 @@ class HtmlSerializerTest {
                 + "<medley-text data-medley-id=\"root.3.1\">0</medley-text></span>", html);
     }
 
+    /**
+     * A {@code Replace}/{@code Insert} payload is serialized from the node alone, so the node is the
+     * <b>root</b> of the fragment and has no parent tag. It must still come out as an element: the client
+     * does {@code htmlToElement(html).firstElementChild}, and bare text there is {@code null} — a dropped
+     * patch. (A raw-text guard that asks {@code Set.of(…).contains(parentTag)} throws NPE right here.)
+     */
+    @Test
+    void aTextNodeSerializedAsAPayloadRootIsStillAnElement() {
+        String html = HtmlSerializer.serialize(new VNode.VText("root.1", "x", true));
+        assertEquals("<medley-text data-medley-id=\"root.1\">x</medley-text>", html);
+    }
+
     /** Static text is never patched, so it stays bare — no marker for every whitespace node. */
     @Test
     void staticTextStaysBare() {

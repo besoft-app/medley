@@ -61,10 +61,43 @@ class PatchAddressabilityTest {
 
     @Test
     void keyedListAddRemoveAndInPlaceEdit() {
-        String tpl = "<ul><li *for=\"item : items\" :key=\"item.id\">{{ item.text }}</li></ul>";
+        // key="…" is the real keyed syntax (`:key` would be parsed as an ordinary bound attribute and
+        // silently fall back to index keys — i.e. this test would not be testing keyed reconciliation).
+        String tpl = "<ul><li *for=\"item : items\" key=\"item.id\">{{ item.text }}</li></ul>";
         assertAddressable(tpl, Ctx.items("a:one", "b:two"), Ctx.items("a:one", "b:two", "c:three"));
         assertAddressable(tpl, Ctx.items("a:one", "b:two"), Ctx.items("a:one"));
         assertAddressable(tpl, Ctx.items("a:one", "b:two"), Ctx.items("a:ONE", "b:two"));
+    }
+
+    /**
+     * A {@code *for} whose container also holds <em>dynamic</em> siblings is fine: growing the list shifts
+     * the following slots, and the positional diff repairs them with a {@code Replace} + {@code Insert}
+     * — which now resolve, because an interpolation's marker is a real element. Before the marker existed
+     * the {@code Replace} landed on a bare text node and vanished.
+     */
+    @Test
+    void forSharingAContainerWithADynamicSibling() {
+        assertAddressable("<div><span *for=\"item : items\" key=\"item.id\">x</span>{{ label }}</div>",
+                Ctx.items("a:one"), Ctx.items("a:one", "b:two"));
+    }
+
+    /**
+     * <b>Known limitation, deliberately pinned</b> (MEDLEY_DESIGN §4.3): a {@code *for} whose container
+     * also holds <em>static</em> text — including the whitespace of a prettily-indented template. Growing
+     * the list shifts the following slots, and the positional diff then tries to {@code Replace} a static
+     * text node, which carries no id and cannot be addressed. This is why list containers must be authored
+     * whitespace-tight with all children keyed. The invariant above does not claim to cover this shape.
+     */
+    @Test
+    void knownLimitation_forSharingAContainerWithStaticText() {
+        String tpl = "<div>\n  <span *for=\"item : items\" key=\"item.id\">x</span>\n  total: {{ count }}\n</div>";
+        try {
+            assertAddressable(tpl, Ctx.items("a:one"), Ctx.items("a:one", "b:two"));
+        } catch (AssertionError expected) {
+            return; // the documented limitation still holds
+        }
+        fail("The positional-diff misalignment around static text (MEDLEY_DESIGN §4.3) appears to be "
+                + "FIXED. Delete this test, move the template into the battery above, and update §4.3/§11a.");
     }
 
     @Test
@@ -80,7 +113,7 @@ class PatchAddressabilityTest {
      */
     @Test
     void rawTextElement() {
-        assertAddressable("<textarea>{{ label }}</textarea>", new Ctx(0), new Ctx(1) {{ label = "x"; }});
+        assertAddressable("<textarea>{{ label }}</textarea>", new Ctx(0), new Ctx(0, "draft"));
     }
 
     // --- the invariant ---
@@ -103,18 +136,43 @@ class PatchAddressabilityTest {
 
         for (Patch p : patches) {
             switch (p) {
-                // the target must exist in the DOM the client is holding *after* the update
+                // an in-place update addresses a node that exists in both DOMs (its id is stable)
                 case Patch.SetText t -> require(nextDom, t.id(), p, template);
                 case Patch.SetAttr a -> require(nextDom, a.id(), p, template);
                 case Patch.RemoveAttr a -> require(nextDom, a.id(), p, template);
                 case Patch.SetEvent e -> require(nextDom, e.id(), p, template);
                 case Patch.RemoveEvent e -> require(nextDom, e.id(), p, template);
-                case Patch.Replace r -> require(nextDom, r.id(), p, template);
-                // an insert addresses its parent; a remove addresses a node of the *previous* DOM
-                case Patch.Insert i -> require(nextDom, i.parentId(), p, template);
+                // structural ops are resolved by the client against the DOM it is *currently holding*,
+                // i.e. the previous one — and their payload must be an element (see requirePayload)
+                case Patch.Replace r -> {
+                    require(prevDom, r.id(), p, template);
+                    requirePayload(r.html(), p, template);
+                }
+                case Patch.Insert i -> {
+                    require(nextDom, i.parentId(), p, template);
+                    requirePayload(i.html(), p, template);
+                }
                 case Patch.Remove r -> require(prevDom, r.id(), p, template);
             }
         }
+    }
+
+    /**
+     * A structural payload must be an <b>element</b>: the client does
+     * {@code htmlToElement(html).firstElementChild}, so a payload that serialized to bare text yields
+     * {@code null} and the patch is dropped on the floor.
+     */
+    private void requirePayload(String html, Patch patch, String template) {
+        Document payload = parse("<fragment>" + html + "</fragment>");
+        NodeList children = payload.getDocumentElement().getChildNodes();
+        for (int i = 0; i < children.getLength(); i++) {
+            if (children.item(i) instanceof Element) {
+                return;
+            }
+        }
+        fail("patch " + patch + " carries a payload with no element root, so the client's "
+                + "htmlToElement(...).firstElementChild is null and the patch is dropped.\npayload: "
+                + html + "\ntemplate: " + template);
     }
 
     /** Fail unless an element carries this {@code data-medley-id} — the only lookup the client has. */
@@ -154,6 +212,11 @@ class PatchAddressabilityTest {
         public List<Item> items = List.of();
 
         Ctx(int count) { this.count = count; }
+
+        Ctx(int count, String label) {
+            this.count = count;
+            this.label = label;
+        }
 
         static Ctx items(String... specs) {
             Ctx c = new Ctx(0);

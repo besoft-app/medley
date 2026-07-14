@@ -22,13 +22,13 @@ const medley = require("../../main/resources/static/medley/medley.js");
 // MedleySsrTest.firstRequestRendersComponentAtItsRoute.
 const COUNTER_SSR =
   '<span data-medley-id="root.3">' +
-  '<medley-text data-medley-id="root.3.0">n</medley-text>' +
+  '<medley-text data-medley-id="root.3.0">Clicks</medley-text>' +
   ': ' +
   '<medley-text data-medley-id="root.3.2">0</medley-text>' +
   "</span>";
 
 // The pre-fix markup, kept as a regression guard: dynamic text with no host of its own.
-const COUNTER_SSR_BROKEN = '<span data-medley-id="root.3">n: 0</span>';
+const COUNTER_SSR_BROKEN = '<span data-medley-id="root.3">Clicks: 0</span>';
 
 function withDom(html, fn) {
   const dom = parseFragment(html);
@@ -45,13 +45,13 @@ function withDom(html, fn) {
 }
 
 test("a text patch updates what the user actually sees", () => withDom(COUNTER_SSR, (dom) => {
-  assert.equal(dom.root.textContent, "n: 0");
+  assert.equal(dom.root.textContent, "Clicks: 0");
 
   medley.applyPatch({ op: "text", id: "root.3.2", value: "1" });
 
   // The whole point: the span the user is looking at now reads the new value, and only the
   // interpolated part changed — the literal ": " between the two interpolations is untouched.
-  assert.equal(dom.root.textContent, "n: 1");
+  assert.equal(dom.root.textContent, "Clicks: 1");
 }));
 
 test("the patched host is an element, so the client can find it at all", () =>
@@ -69,7 +69,7 @@ test("REGRESSION: bare dynamic text is unaddressable — the patch would be drop
 
     medley.applyPatch({ op: "text", id: "root.3.2", value: "1" });
 
-    assert.equal(dom.root.textContent, "n: 0", "this is the bug: the DOM never updates");
+    assert.equal(dom.root.textContent, "Clicks: 0", "this is the bug: the DOM never updates");
   }));
 
 test("a patch addressed to the element itself still works (raw-text elements)", () =>

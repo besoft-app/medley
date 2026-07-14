@@ -55,16 +55,22 @@ public sealed interface VNode permits VNode.VElement, VNode.VText {
     /**
      * A text node.
      *
-     * @param dynamic true when this text came from an interpolation ({@code {{ … }}}), i.e. the differ
-     *                can emit a {@link app.besoft.medley.core.diff.Patch.SetText} for it. Such a node
-     *                <b>must be addressable in the DOM</b>, so the serializer gives it a host element
-     *                carrying this node's id (a browser cannot address a bare text node, and it merges
-     *                adjacent text runs into one). Static template text is never patched and so stays
-     *                bare text. See {@code HtmlSerializer}.
+     * @param needsHost true when this node needs its <b>own host element</b> in the DOM to be
+     *                  addressable — i.e. the differ can emit a
+     *                  {@link app.besoft.medley.core.diff.Patch.SetText} for <em>this id</em>, but a
+     *                  browser cannot address a bare text node (and merges adjacent runs into one). The
+     *                  serializer then wraps it in {@code <medley-text data-medley-id="…">}.
+     *                  <p><b>Not a synonym for "came from an interpolation".</b> Text inside a raw-text
+     *                  element ({@code <textarea>}, {@code <option>}, …) is interpolated too, but a marker
+     *                  is illegal there, so {@code TemplateRenderer} merges that content into one node
+     *                  carrying the <em>element's</em> id and leaves this false: the element is the
+     *                  address. Setting it true for those would put an illegal element inside a
+     *                  {@code <textarea>} and re-open the bug this flag exists to close
+     *                  (MEDLEY_DESIGN §11a).</p>
      */
-    record VText(String id, String value, boolean dynamic) implements VNode {
+    record VText(String id, String value, boolean needsHost) implements VNode {
 
-        /** Static template text — never patched, so it needs no addressable host. */
+        /** Text that is addressed some other way (static text, or raw-text content held by its element). */
         public VText(String id, String value) {
             this(id, value, false);
         }

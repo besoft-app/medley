@@ -54,9 +54,15 @@ class MedleySsrTest {
                 .andExpect(content().string(containsString("data-medley-id=\"root.3\"")))
                 // Interpolated text is served inside an addressable host carrying the text node's own id
                 // — this is what makes a `text` patch resolvable in the browser (MEDLEY_DESIGN §11a).
-                // The JS harness pins the same markup from the client side (dom-after-patch.test.js).
-                .andExpect(content().string(
-                        containsString("<medley-text data-medley-id=\"root.3.2\">0</medley-text>")))
+                // The whole span is pinned because the JS harness hard-codes this exact markup as its
+                // fixture (dom-after-patch.test.js): if the server's output drifts, that test would be
+                // asserting against a DOM the server no longer produces, and the two ends must not drift.
+                .andExpect(content().string(containsString(
+                        "<span data-medley-id=\"root.3\">"
+                        + "<medley-text data-medley-id=\"root.3.0\">Clicks</medley-text>"
+                        + ": "
+                        + "<medley-text data-medley-id=\"root.3.2\">0</medley-text>"
+                        + "</span>")))
                 .andExpect(content().string(containsString("/medley/medley.js")));
     }
 

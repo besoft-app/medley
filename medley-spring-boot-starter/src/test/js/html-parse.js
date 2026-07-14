@@ -15,7 +15,10 @@
  * `[data-medley-id="…"]`.
  */
 
-const VOID_TAGS = new Set(["area", "base", "br", "col", "hr", "img", "input", "link", "meta", "source"]);
+const VOID_TAGS = new Set([
+  "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source",
+  "track", "wbr"
+]);
 
 function decode(s) {
   return s.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&amp;/g, "&");
@@ -107,7 +110,14 @@ function parseFragment(html) {
 
     const [, closing, tag, rawAttrs, selfClosed] = m;
     if (closing) {
-      if (stack.length > 1) stack.pop();
+      const open = stack[stack.length - 1];
+      // Mismatched close = the serializer emitted malformed HTML. Say so loudly rather than absorbing
+      // it: this parser exists to catch exactly the class of bug where the two ends disagree.
+      if (stack.length === 1 || open.tagName !== tag.toUpperCase()) {
+        throw new Error("malformed HTML: </" + tag + "> closes <" +
+          (stack.length === 1 ? "nothing" : open.tagName.toLowerCase()) + ">");
+      }
+      stack.pop();
       continue;
     }
     const el = makeElement(tag, parseAttrs(rawAttrs));

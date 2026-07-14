@@ -1,9 +1,9 @@
 package app.besoft.medley.core.diff;
 
+import app.besoft.medley.core.vnode.Html;
 import app.besoft.medley.core.vnode.VNode;
 
 import java.util.Map;
-import java.util.Set;
 
 /**
  * Serializes a VNode tree to HTML.
@@ -29,13 +29,6 @@ import java.util.Set;
  */
 public final class HtmlSerializer {
 
-    /** Tag hosting dynamic text. Styled {@code display: contents} so it generates no box. */
-    private static final String TEXT_MARKER_TAG = "medley-text";
-
-    /** Elements whose content model forbids the marker (see the class doc). */
-    private static final Set<String> RAW_TEXT_TAGS =
-            Set.of("textarea", "title", "option", "script", "style");
-
     private HtmlSerializer() {}
 
     public static String serialize(VNode node) {
@@ -51,13 +44,21 @@ public final class HtmlSerializer {
         }
     }
 
-    /** Dynamic text is wrapped so the client can address it; static text is written as-is. */
+    /**
+     * Dynamic text is wrapped so the client can address it; static text is written as-is.
+     *
+     * <p>{@code parentTag} is {@code null} when this text is the <b>root</b> of the fragment being
+     * serialized — which is exactly the case for a {@link Patch.Replace} / {@link Patch.Insert} payload
+     * whose slot holds text. Such a payload <em>must</em> be an element: the client does
+     * {@code htmlToElement(html).firstElementChild}, and bare text there yields {@code null} and a dropped
+     * patch. So a null parent is "not raw text" — the marker is emitted.</p>
+     */
     private static void writeText(VNode.VText t, StringBuilder sb, String parentTag) {
-        if (t.dynamic() && !RAW_TEXT_TAGS.contains(parentTag)) {
-            sb.append('<').append(TEXT_MARKER_TAG)
+        if (t.needsHost() && !Html.isRawText(parentTag)) {
+            sb.append('<').append(Html.TEXT_MARKER_TAG)
               .append(" data-medley-id=\"").append(escapeAttr(t.id())).append("\">")
               .append(escapeText(t.value()))
-              .append("</").append(TEXT_MARKER_TAG).append('>');
+              .append("</").append(Html.TEXT_MARKER_TAG).append('>');
         } else {
             sb.append(escapeText(t.value()));
         }

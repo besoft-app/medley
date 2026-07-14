@@ -1,5 +1,6 @@
 package app.besoft.medley.core.template;
 
+import app.besoft.medley.core.vnode.Html;
 import app.besoft.medley.core.vnode.VNode;
 
 import java.util.ArrayList;
@@ -7,7 +8,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
+
 
 /**
  * Turns a parsed template AST + a context object (the component instance) into a VNode tree.
@@ -34,16 +35,6 @@ public final class TemplateRenderer {
     private static final String COMPONENT_TAG = "medley-component";
     /** Guards against a partial or component that (transitively) includes itself. */
     private static final int MAX_PARTIAL_DEPTH = 32;
-
-    /**
-     * Elements whose content model is raw text: an element child (such as the marker the serializer
-     * gives dynamic text) would be illegal inside them, and a browser would not parse it as markup. Their
-     * text is therefore merged into a single text node carrying the <em>element's own</em> id, so a text
-     * patch addresses the element and the client sets its {@code textContent} — which is exactly right for
-     * a {@code <textarea>} or an {@code <option>}.
-     */
-    private static final Set<String> RAW_TEXT_TAGS =
-            Set.of("textarea", "title", "option", "script", "style");
 
     private final TemplateNode.Element root;
     /** Resolves {@code <medley-partial>} fragments; null when partials are unsupported (e.g. tests). */
@@ -104,8 +95,8 @@ public final class TemplateRenderer {
             case TemplateNode.Text t -> List.of(new VNode.VText(id, t.value()));
             case TemplateNode.Interpolation i -> {
                 String text = new ExpressionEvaluator(ctx).evalString(i.expr());
-                // dynamic: the differ can patch this text, so the serializer must give it a host
-                // element carrying this id — a bare text node is not addressable from the client.
+                // needsHost: the differ can patch this text by *this* id, and a bare text node is not
+                // addressable from the client — so the serializer must give it a host element.
                 yield List.of(new VNode.VText(id, text, true));
             }
             case TemplateNode.Element el -> renderElement(el, id, ctx, depth, host);
@@ -214,7 +205,7 @@ public final class TemplateRenderer {
         // attributes and never diffs/replaces its client-managed internal DOM. Any template
         // children of an island are intentionally ignored server-side.
         List<VNode> children = new ArrayList<>();
-        if (RAW_TEXT_TAGS.contains(el.tag())) {
+        if (Html.RAW_TEXT_TAGS.contains(el.tag())) {
             children.add(rawTextContent(el, id, ctx));
         } else if (!ISLAND_TAG.equals(el.tag())) {
             int childPos = 0;
