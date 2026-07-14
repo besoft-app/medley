@@ -7,10 +7,13 @@ import app.besoft.medley.core.diff.IdPaths;
 
 import jakarta.servlet.http.HttpSession;
 
+import java.lang.annotation.Annotation;
 import java.lang.reflect.Field;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -40,11 +43,18 @@ import org.springframework.web.servlet.function.ServerResponse;
  * <p>Reflection here is deliberately local: it mirrors core's (package-private) {@code ParamScanner}
  * rather than widening core's API for a development-only feature — {@code medley-core} is untouched
  * by this increment.</p>
+ *
+ * <p>The snapshot is taken off the render loop (an HTTP worker thread, while the session's WebSocket
+ * thread may be mutating {@code @State}), so a field read here can be a moment stale. That is fine for
+ * an inspector and keeps the loop free of any locking it would not otherwise need.</p>
  */
 public class MedleyDevToolsController {
 
     /** Serialized value length beyond which a field is reported as elided rather than inlined. */
     private static final int MAX_VALUE_CHARS = 4096;
+
+    /** Collection/map size beyond which a field is elided without being serialized at all. */
+    private static final int MAX_VALUE_ELEMENTS = 200;
 
     private final ObjectMapper mapper;
 
@@ -70,7 +80,11 @@ public class MedleyDevToolsController {
         }
         root.put("count", components.size());
 
-        return ServerResponse.ok().contentType(MediaType.APPLICATION_JSON).body(root);
+        // A snapshot of live state: never cached, and never revalidated from a store.
+        return ServerResponse.ok()
+                .contentType(MediaType.APPLICATION_JSON)
+                .header("Cache-Control", "no-store")
+                .body(root);
     }
 
     /** The Medley session bound to the caller's HTTP session, or null when there is none yet. */
@@ -101,7 +115,7 @@ public class MedleyDevToolsController {
     }
 
     /** Current values of the fields carrying the given annotation, walking the class hierarchy. */
-    private ObjectNode fields(Component component, Class<? extends java.lang.annotation.Annotation> marker) {
+    private ObjectNode fields(Component component, Class<? extends Annotation> marker) {
         ObjectNode out = mapper.createObjectNode();
         Class<?> cls = component.getClass();
         while (cls != null && cls != Object.class) {
@@ -116,9 +130,16 @@ public class MedleyDevToolsController {
     }
 
     /**
-     * A single field value as JSON. A value that Jackson cannot serialize (or that is unreasonably
-     * large) degrades to a short descriptive string — the inspector must never fail the request over
-     * one awkward field.
+     * A single field value as JSON. A value Jackson cannot serialize — or one that is unreasonably
+     * large — degrades to a short descriptive string: the inspector must never fail the request over one
+     * awkward field, since {@code @State} is whatever the application put there.
+     *
+     * <p>Two hazards are handled explicitly. A big collection is elided <em>before</em> conversion, so a
+     * huge {@code @State} list is never materialised as a tree just to be measured and thrown away. And a
+     * <b>self-referencing</b> collection or map (a {@code List} containing itself, two {@code Map}s
+     * pointing at each other) makes Jackson recurse until the stack blows — a {@link StackOverflowError},
+     * not a {@code RuntimeException}, hence the explicit catch. Cyclic {@code @State} is easy to create
+     * by accident, and it must degrade to a label rather than a 500.</p>
      */
     private JsonNode read(Component component, Field field) {
         Object value;
@@ -131,15 +152,31 @@ public class MedleyDevToolsController {
         if (value == null) {
             return mapper.nullNode();
         }
+        if (tooManyElements(value)) {
+            return elided(value, "too large to inline");
+        }
         JsonNode json;
         try {
             json = mapper.valueToTree(value);
         } catch (RuntimeException e) {
-            return new TextNode("<" + value.getClass().getSimpleName() + ": not serializable>");
+            return elided(value, "not serializable");
+        } catch (StackOverflowError e) {
+            return elided(value, "self-referencing");
         }
         if (json.toString().length() > MAX_VALUE_CHARS) {
-            return new TextNode("<" + value.getClass().getSimpleName() + ": too large to inline>");
+            return elided(value, "too large to inline");
         }
         return json;
+    }
+
+    private static boolean tooManyElements(Object value) {
+        if (value instanceof Collection<?> c) {
+            return c.size() > MAX_VALUE_ELEMENTS;
+        }
+        return value instanceof Map<?, ?> m && m.size() > MAX_VALUE_ELEMENTS;
+    }
+
+    private static TextNode elided(Object value, String why) {
+        return new TextNode("<" + value.getClass().getSimpleName() + ": " + why + ">");
     }
 }

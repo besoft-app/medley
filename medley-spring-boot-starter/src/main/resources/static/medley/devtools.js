@@ -18,8 +18,9 @@
 (function () {
   "use strict";
 
-  const MAX_LOG = 100;     // entries kept in the ring buffer
-  const FLASH_MS = 700;    // how long a patched element stays highlighted
+  const MAX_LOG = 100;           // entries kept in the ring buffer
+  const FLASH_MS = 700;          // how long a patched element stays highlighted
+  const TREE_DEBOUNCE_MS = 150;  // coalesce tree refreshes across a burst of patches
   const TREE_URL = "/medley/devtools/tree";
 
   // ---- pure helpers (exercised by the node:test harness) ---------------------
@@ -31,20 +32,25 @@
     return noQuery === wsPath || noQuery.endsWith(wsPath);
   }
 
-  /** One patch as a short human-readable line, e.g. `text root.3.2 = "2"`. */
+  /**
+   * One patch as a short human-readable line, e.g. `text root.3.2 = "2"`. Field names follow the wire
+   * exactly (see PatchEncoder): `attr`/`removeAttr` carry `name`, `event`/`removeEvent` carry `event`
+   * (+ `action`), `insert` carries `parentId`/`index`.
+   */
   function describePatch(p) {
     if (!p || typeof p !== "object") return String(p);
     switch (p.op) {
-      case "text":   return 'text ' + p.id + ' = "' + p.value + '"';
-      case "attr":   return "attr " + p.id + " " + p.name + '="' + p.value + '"';
-      case "event":  return "event " + p.id + " " + (p.name || "");
-      case "prop":   return "prop " + p.id + " " + p.name + '="' + p.value + '"';
-      case "replace": return "replace " + p.id;
-      case "insert": return "insert " + p.id + (p.index !== undefined ? " @" + p.index : "");
-      case "remove": return "remove " + p.id;
-      case "reload": return "reload";
-      case "error":  return "error: " + p.message;
-      default:       return String(p.op) + " " + (p.id || "");
+      case "text":        return 'text ' + p.id + ' = "' + p.value + '"';
+      case "attr":        return "attr " + p.id + " " + p.name + '="' + p.value + '"';
+      case "removeAttr":  return "removeAttr " + p.id + " " + p.name;
+      case "event":       return "event " + p.id + " " + p.event + " -> " + p.action;
+      case "removeEvent": return "removeEvent " + p.id + " " + p.event;
+      case "replace":     return "replace " + p.id;
+      case "insert":      return "insert " + p.id + " into " + p.parentId + " @" + p.index;
+      case "remove":      return "remove " + p.id;
+      case "reload":      return "reload";
+      case "error":       return "error: " + p.message;
+      default:            return String(p.op) + " " + (p.id || "");
     }
   }
 
@@ -105,11 +111,13 @@
   }
 
   const log = [];
-  let sentAt = 0;          // timestamp of the last outbound event, for a round-trip estimate
+  let sentAt = 0;            // timestamp of the last outbound event, for a round-trip estimate
   let panel = null;
   let logBody = null;
   let treeBody = null;
   let tab = "patches";
+  let treeTimer = null;      // pending debounced refresh
+  let treeInFlight = false;  // a snapshot request is already running
 
   function wsPath() {
     const rootEl = document.getElementById("medley-root");
@@ -118,6 +126,9 @@
 
   // ---- the tap ---------------------------------------------------------------
   function installTap() {
+    if (window.WebSocket.__medleyTapped) {
+      return; // the script was included twice — one tap is enough
+    }
     const Native = window.WebSocket;
     const path = wsPath();
 
@@ -129,21 +140,31 @@
       // Registered before medley.js adds its own listener, so this runs first; patch application
       // happens synchronously after, which is why highlighting is deferred below.
       socket.addEventListener("message", function (event) {
-        onInbound(event.data);
+        guarded(onInbound, event.data);
       });
       const nativeSend = socket.send.bind(socket);
       socket.send = function (data) {
-        onOutbound(data);
+        guarded(onOutbound, data);
         return nativeSend(data);
       };
       return socket;
     }
+    Tapped.__medleyTapped = true;
     Tapped.prototype = Native.prototype;
     Tapped.CONNECTING = Native.CONNECTING;
     Tapped.OPEN = Native.OPEN;
     Tapped.CLOSING = Native.CLOSING;
     Tapped.CLOSED = Native.CLOSED;
     window.WebSocket = Tapped;
+  }
+
+  /** Run an inspector callback so that a failure in it can never break the runtime it is observing. */
+  function guarded(fn, arg) {
+    try {
+      fn(arg);
+    } catch (e) {
+      console.error("[medley-devtools] observer failed (the runtime is unaffected)", e);
+    }
   }
 
   function onOutbound(raw) {
@@ -327,14 +348,30 @@
     logBody.innerHTML = rows.join("");
   }
 
+  /**
+   * Refresh the tree, coalescing bursts. Every patch batch invalidates the snapshot, and a burst (say
+   * one per keystroke on an input-bound field) would otherwise fire a GET each — so requests are
+   * debounced, and only one is ever in flight, which also stops two responses racing to fill the panel.
+   */
   function refreshTree() {
+    if (treeTimer) return;
+    treeTimer = setTimeout(function () {
+      treeTimer = null;
+      fetchTree();
+    }, TREE_DEBOUNCE_MS);
+  }
+
+  function fetchTree() {
+    if (treeInFlight) return;
+    treeInFlight = true;
     fetch(TREE_URL, { credentials: "same-origin" })
       .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status)); })
       .then(renderTree)
       .catch(function (e) {
         treeBody.innerHTML = '<div class="medley-dt-empty">Tree unavailable: ' +
           escapeHtml(String(e.message)) + "</div>";
-      });
+      })
+      .finally(function () { treeInFlight = false; });
   }
 
   function renderTree(snapshot) {

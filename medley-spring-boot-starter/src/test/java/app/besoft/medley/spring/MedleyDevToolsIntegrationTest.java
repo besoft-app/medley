@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import app.besoft.medley.spring.fixtures.DevToolsProbeComponent;
 import app.besoft.medley.spring.fixtures.TestApplication;
 
 import org.junit.jupiter.api.Test;
@@ -41,6 +42,9 @@ class MedleyDevToolsIntegrationTest {
 
     @Autowired
     MockMvc mvc;
+
+    @Autowired
+    TemplateRegistry templates;
 
     @Test
     void shellLoadsTheOverlayBeforeTheRuntime() throws Exception {
@@ -92,5 +96,30 @@ class MedleyDevToolsIntegrationTest {
         mvc.perform(get("/medley/devtools.js"))
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString("medley devtools")));
+    }
+
+    /**
+     * {@code @State} holds whatever the application put there, so a field the snapshot cannot render must
+     * degrade to a label — never take the request down with it. The nastiest case is a self-referencing
+     * collection: Jackson recurses into a {@link StackOverflowError}, which is an {@link Error} and would
+     * sail straight through a {@code catch (RuntimeException)} into a 500.
+     */
+    @Test
+    void awkwardStateDegradesToALabelInsteadOfFailingTheRequest() throws Exception {
+        MedleySession session = new MedleySession(templates);
+        session.mount("root", new DevToolsProbeComponent());
+        MockHttpSession httpSession = new MockHttpSession();
+        httpSession.setAttribute(MedleySession.class.getName(), session);
+
+        mvc.perform(get("/medley/devtools/tree").session(httpSession))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.components[0].state.selfReferencing")
+                        .value("<ArrayList: self-referencing>"))
+                .andExpect(jsonPath("$.components[0].state.exploding")
+                        .value("<Exploding: not serializable>"))
+                .andExpect(jsonPath("$.components[0].state.huge")
+                        .value("<ArrayList: too large to inline>"))
+                // …while an ordinary field is still reported as a real value
+                .andExpect(jsonPath("$.components[0].state.ok").value(42));
     }
 }

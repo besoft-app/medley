@@ -1,7 +1,8 @@
-# medley.js test harness
+# client-side test harness
 
-Automated tests for the client runtime (`src/main/resources/static/medley/medley.js`), which had no
-automated coverage before — it was exercised only by the demo pages.
+Automated tests for the client scripts — the runtime (`src/main/resources/static/medley/medley.js`),
+which had no automated coverage before (it was exercised only by the demo pages), and the dev-tools
+overlay (`static/medley/devtools.js`, Stage 5 increment 2).
 
 ## Running
 
@@ -30,6 +31,10 @@ element attribute/textContent/listener members), no HTML parsing.
 - `ownerComponentId` — the increment-4b.2 DOM walk-up to the nearest `data-medley-cid`.
 - `applyPatch` / `applyPatches` — the `text` / `attr` / `removeAttr` / `event` / `removeEvent` /
   `remove` ops.
+- `devtools.js` (Stage 5.2) — `isMedleySocket` (which sockets get tapped), `describePatch` (pinned
+  against every op `PatchEncoder` emits, with the field names it really puts on the wire), `summarize` /
+  `formatOps`, `patchTargets`, the log ring buffer, `treeDepth`. The DOM half (overlay panel, flashing)
+  needs a browser and is demo-verified.
 
 ## Deferred (follow-up)
 
@@ -37,3 +42,9 @@ element attribute/textContent/listener members), no HTML parsing.
   (`htmlToElement` → `<template>.innerHTML`), which the lightweight shim does not provide. Decide
   between a hand-rolled fragment parser (zero dependency) or adding `jsdom` as a test-only devDependency
   before covering those.
+- **The shim's blind spot, and why it matters** (see MEDLEY_DESIGN §11a): `dom-shim.js` lets a test
+  *fabricate* an element carrying any `data-medley-id`, including one the server would only ever give to
+  a **text node**. That is how a critical bug survived — the server addresses text patches by text-node
+  id, which no real DOM exposes, so every text patch was silently dropped in the browser while this
+  harness stayed green. A fragment parser added here must model the real thing: adjacent text runs merge,
+  and only elements are addressable by `data-medley-id`.

@@ -28,11 +28,27 @@ test("honours a custom configured websocket path", () => {
 });
 
 // ---- describePatch: one readable line per wire op ----
-test("describes each patch op", () => {
+// Every op PatchEncoder can emit is covered here, with the field names it actually puts on the wire:
+// attr/removeAttr carry `name`, event/removeEvent carry `event` (+ `action`), insert carries
+// `parentId`/`index`. Getting a field name wrong makes the inspector lie, which is worse than useless —
+// so the whole op set is pinned.
+test("describes every patch op the server can emit", () => {
   assert.equal(devtools.describePatch({ op: "text", id: "root.3.2", value: "2" }), 'text root.3.2 = "2"');
   assert.equal(devtools.describePatch({ op: "attr", id: "root.1", name: "class", value: "on" }),
     'attr root.1 class="on"');
+  assert.equal(devtools.describePatch({ op: "removeAttr", id: "root.1", name: "class" }),
+    "removeAttr root.1 class");
+  assert.equal(devtools.describePatch({ op: "event", id: "root.5", event: "click", action: "increment" }),
+    "event root.5 click -> increment");
+  assert.equal(devtools.describePatch({ op: "removeEvent", id: "root.5", event: "click" }),
+    "removeEvent root.5 click");
+  assert.equal(devtools.describePatch({ op: "replace", id: "root.2" }), "replace root.2");
+  assert.equal(devtools.describePatch({ op: "insert", id: "root.2[c]", parentId: "root.2", index: 1 }),
+    "insert root.2[c] into root.2 @1");
   assert.equal(devtools.describePatch({ op: "remove", id: "root.2[a]" }), "remove root.2[a]");
+});
+
+test("describes the control messages", () => {
   assert.equal(devtools.describePatch({ op: "reload" }), "reload");
   assert.equal(devtools.describePatch({ op: "error", message: "boom" }), "error: boom");
 });
