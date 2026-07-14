@@ -8,6 +8,11 @@ spring:
 medley:
   websocket-path: /medley/ws
   template-location: templates/medley/
+  # Dev-tools (Stage 5, increment 2): in-page patch log + DOM flash + component-tree inspector
+  # (Ctrl+Shift+M toggles the overlay). This is a demo app, so it ships on. Never enable it in
+  # production — /medley/devtools/tree exposes the session's @State.
+  devtools:
+    enabled: true
 
 # Expose the metrics endpoint so Medley's meters are visible at /actuator/metrics
 # (e.g. /actuator/metrics/medley.patches after clicking a demo).
