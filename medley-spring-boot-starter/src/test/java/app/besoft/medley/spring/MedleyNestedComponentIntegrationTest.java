@@ -36,8 +36,8 @@ class MedleyNestedComponentIntegrationTest {
         assertThat(html).contains("data-medley-cid=\"root.0::counter-badge\"");
         assertThat(html).contains("data-medley-cid=\"root.1::counter-badge\"");
         // Each child rendered its own injected @Param: bound :start="n" (=5) and static start="9".
-        assertThat(html).contains("count: 5");
-        assertThat(html).contains("count: 9");
+        assertThat(html).contains(">5</medley-text>");
+        assertThat(html).contains(">9</medley-text>");
         // The child tree is rooted at the child instance id.
         assertThat(html).contains("data-medley-id=\"root.0::counter-badge\"");
     }

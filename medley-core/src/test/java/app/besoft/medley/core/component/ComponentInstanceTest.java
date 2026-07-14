@@ -58,7 +58,10 @@ class ComponentInstanceTest {
         String html = inst.renderInitialHtml();
         assertTrue(c.initialized, "onInit must run on initial render");
         assertTrue(html.contains("data-medley-id=\"root\""));
-        assertTrue(html.contains("n: 0"));
+        // Interpolated values are rendered inside an addressable <medley-text> host, so the text a
+        // patch can update is reachable from the client; the literal between them stays bare text.
+        assertTrue(html.contains(">n</medley-text>: <medley-text"), html);
+        assertTrue(html.contains(">0</medley-text>"), html);
         assertTrue(html.contains("data-medley-on-click=\"increment\""));
     }
 

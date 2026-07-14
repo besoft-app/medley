@@ -105,6 +105,7 @@ public class DevServer {
               body{font-family:system-ui,sans-serif;margin:3rem}
               .counter{display:flex;gap:.75rem;align-items:center;font-size:1.25rem}
               button{font-size:1rem;padding:.4rem .8rem;cursor:pointer}
+              medley-text{display:contents}
               medley-placeholder{display:none}
             </style></head>
             <body>

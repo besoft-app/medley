@@ -1,5 +1,6 @@
 package app.besoft.medley.core.template;
 
+import app.besoft.medley.core.vnode.Html;
 import app.besoft.medley.core.vnode.VNode;
 
 import java.util.ArrayList;
@@ -7,6 +8,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+
 
 /**
  * Turns a parsed template AST + a context object (the component instance) into a VNode tree.
@@ -93,7 +95,9 @@ public final class TemplateRenderer {
             case TemplateNode.Text t -> List.of(new VNode.VText(id, t.value()));
             case TemplateNode.Interpolation i -> {
                 String text = new ExpressionEvaluator(ctx).evalString(i.expr());
-                yield List.of(new VNode.VText(id, text));
+                // needsHost: the differ can patch this text by *this* id, and a bare text node is not
+                // addressable from the client — so the serializer must give it a host element.
+                yield List.of(new VNode.VText(id, text, true));
             }
             case TemplateNode.Element el -> renderElement(el, id, ctx, depth, host);
         };
@@ -111,6 +115,26 @@ public final class TemplateRenderer {
             return List.of(placeholder(id));
         }
         return List.of(renderInstance(el, id, ctx, null, depth, host));
+    }
+
+    /**
+     * The content of a raw-text element ({@code <textarea>}, {@code <option>}, …) as one text node
+     * carrying the <em>element's</em> id: its text cannot host the marker element that makes dynamic text
+     * addressable, so the element itself is the address. A text patch then sets the element's
+     * {@code textContent}, which is the correct DOM operation for these tags.
+     */
+    private VNode rawTextContent(TemplateNode.Element el, String id, Object ctx) {
+        ExpressionEvaluator eval = new ExpressionEvaluator(ctx);
+        StringBuilder text = new StringBuilder();
+        for (TemplateNode child : el.children()) {
+            switch (child) {
+                case TemplateNode.Text t -> text.append(t.value());
+                case TemplateNode.Interpolation i -> text.append(eval.evalString(i.expr()));
+                case TemplateNode.Element e -> throw new TemplateException(
+                        "<" + el.tag() + "> may only contain text, but it contains <" + e.tag() + ">");
+            }
+        }
+        return new VNode.VText(id, text.toString());
     }
 
     /** A zero-content, hidden element used to hold the slot of a false {@code *if}. */
@@ -181,7 +205,9 @@ public final class TemplateRenderer {
         // attributes and never diffs/replaces its client-managed internal DOM. Any template
         // children of an island are intentionally ignored server-side.
         List<VNode> children = new ArrayList<>();
-        if (!ISLAND_TAG.equals(el.tag())) {
+        if (Html.RAW_TEXT_TAGS.contains(el.tag())) {
+            children.add(rawTextContent(el, id, ctx));
+        } else if (!ISLAND_TAG.equals(el.tag())) {
             int childPos = 0;
             for (TemplateNode childTemplate : el.children()) {
                 String childId = id + "." + childPos;

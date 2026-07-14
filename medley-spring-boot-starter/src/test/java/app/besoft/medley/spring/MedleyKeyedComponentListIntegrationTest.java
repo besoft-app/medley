@@ -60,7 +60,8 @@ class MedleyKeyedComponentListIntegrationTest {
         // Each row is its own keyed child instance, seeded from its row.
         assertThat(html).contains("data-medley-cid=\"" + CID_A + "\"");
         assertThat(html).contains("data-medley-cid=\"" + CID_B + "\"");
-        assertThat(html).contains("count: 10").contains("count: 20");
+        // Interpolated values live inside their addressable <medley-text> host (see HtmlSerializer).
+        assertThat(html).contains(">10</medley-text>").contains(">20</medley-text>");
         String cookie = ssr.getHeaders().getFirst(HttpHeaders.SET_COOKIE).split(";", 2)[0];
 
         BlockingQueue<String> inbound = new LinkedBlockingQueue<>();
