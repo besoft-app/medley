@@ -89,10 +89,23 @@ public class MedleyController {
             </head>
             <body>
               <div id="medley-root" data-ws="%s">%s</div>
-              <script src="/medley/medley.js"></script>
+            %s  <script src="/medley/medley.js"></script>
             </body>
             </html>
-            """.formatted(properties.getWebsocketPath(), bodyHtml);
+            """.formatted(properties.getWebsocketPath(), bodyHtml, devToolsScript());
+    }
+
+    /**
+     * The dev-tools overlay (Stage 5, increment 2), when {@code medley.devtools.enabled=true}. It loads
+     * <em>before</em> {@code medley.js}: the inspector taps the patch stream by wrapping {@code WebSocket}
+     * before the runtime opens one, which is what keeps {@code medley.js} free of any dev-tools hook.
+     * With the flag off this contributes nothing — the shell has no reference to the script at all.
+     */
+    private String devToolsScript() {
+        if (!properties.getDevtools().isEnabled()) {
+            return "";
+        }
+        return "  <script src=\"/medley/devtools.js\"></script>\n";
     }
 
     private String notFound(String path) {
