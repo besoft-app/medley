@@ -13,11 +13,11 @@ dependencyManagement {
 dependencies {
     api(project(":medley-core"))
 
-    // Pinned explicitly (not left to the io.spring.dependency-management BOM import) because that
-    // plugin only customizes the generated Maven POM's <dependencyManagement> block, not the Gradle
-    // Module Metadata (.module) file that maven-publish also emits. A Gradle consumer prefers the
-    // .module file when present, so an unpinned version here resolves to nothing for a Gradle
-    // consumer even though the POM alone would be fine. Same catalog version as the BOM import above.
+    // Pinned to the Spring Boot version explicitly (not the libs.* catalog alias) on purpose:
+    // io.spring.dependency-management customizes only the generated POM's <dependencyManagement>,
+    // NOT the Gradle Module Metadata (.module) that maven-publish also emits and Gradle consumers
+    // prefer — an unpinned alias lands there with no version, so a Gradle consumer can't resolve it.
+    // Do not simplify back to libs.spring.boot.starter.web etc. without restoring versions in .module.
     api("org.springframework.boot:spring-boot-starter-web:${libs.versions.spring.boot.get()}")
     api("org.springframework.boot:spring-boot-starter-websocket:${libs.versions.spring.boot.get()}")
     implementation("org.springframework.boot:spring-boot-autoconfigure:${libs.versions.spring.boot.get()}")
