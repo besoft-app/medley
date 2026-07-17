@@ -1,5 +1,6 @@
 plugins {
     `java-library`
+    `maven-publish`
     alias(libs.plugins.spring.dependency.management)
 }
 
@@ -12,9 +13,14 @@ dependencyManagement {
 dependencies {
     api(project(":medley-core"))
 
-    api(libs.spring.boot.starter.web)
-    api(libs.spring.boot.starter.websocket)
-    implementation(libs.spring.boot.autoconfigure)
+    // Pinned explicitly (not left to the io.spring.dependency-management BOM import) because that
+    // plugin only customizes the generated Maven POM's <dependencyManagement> block, not the Gradle
+    // Module Metadata (.module) file that maven-publish also emits. A Gradle consumer prefers the
+    // .module file when present, so an unpinned version here resolves to nothing for a Gradle
+    // consumer even though the POM alone would be fine. Same catalog version as the BOM import above.
+    api("org.springframework.boot:spring-boot-starter-web:${libs.versions.spring.boot.get()}")
+    api("org.springframework.boot:spring-boot-starter-websocket:${libs.versions.spring.boot.get()}")
+    implementation("org.springframework.boot:spring-boot-autoconfigure:${libs.versions.spring.boot.get()}")
     annotationProcessor(libs.spring.boot.configuration.processor)
 
     // Optional observability: metrics activate only when the app provides Micrometer + a MeterRegistry
@@ -35,4 +41,12 @@ dependencies {
     // SessionRepositoryFilter — so the container's own HttpSession, and with it MedleySession storage and
     // the 6a valueUnbound eviction path, stay untouched. Adding a store module here would change that.
     testImplementation(libs.spring.session.core)
+}
+
+publishing {
+    publications {
+        create<MavenPublication>("maven") {
+            from(components["java"])
+        }
+    }
 }
