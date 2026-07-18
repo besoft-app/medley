@@ -1,0 +1,7 @@
+<div class="signup-demo">
+  <h1>Medley — form validation</h1>
+  <p><input type="text" @input="setName($value)" placeholder="name"><span *if="errors.name" class="error"> {{ errors.name }}</span></p>
+  <p><input type="text" @input="setEmail($value)" placeholder="e-mail"><span *if="errors.email" class="error"> {{ errors.email }}</span></p>
+  <button @click="submit">Register</button>
+  <p>registered: {{ registered }}</p>
+</div>
