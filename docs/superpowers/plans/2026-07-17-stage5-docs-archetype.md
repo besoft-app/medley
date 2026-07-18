@@ -154,9 +154,9 @@ Create `tools/medley-archetype/pom.xml`:
     <pluginManagement>
       <plugins>
         <plugin>
-          <groupId>org.apache.maven.archetype</groupId>
+          <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-archetype-plugin</artifactId>
-          <version>3.2.1</version>
+          <version>3.4.1</version>
         </plugin>
       </plugins>
     </pluginManagement>
