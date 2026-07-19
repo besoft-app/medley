@@ -7,7 +7,7 @@
 
   <requiredProperties>
     <requiredProperty key="medleyVersion">
-      <defaultValue>0.5.0</defaultValue>
+      <defaultValue>0.6.0</defaultValue>
     </requiredProperty>
   </requiredProperties>
 

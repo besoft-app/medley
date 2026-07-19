@@ -6,7 +6,7 @@
 
   <groupId>app.besoft.medley</groupId>
   <artifactId>medley-archetype</artifactId>
-  <version>0.5.0</version>
+  <version>0.6.0</version>
   <packaging>maven-archetype</packaging>
 
   <name>Medley Maven Archetype</name>
