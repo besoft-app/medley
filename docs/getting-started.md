@@ -36,7 +36,8 @@ mvn archetype:generate \
   -DarchetypeGroupId=app.besoft.medley \
   -DarchetypeArtifactId=medley-archetype \
   -DarchetypeVersion=0.5.0 \
-  -DgroupId=com.example -DartifactId=my-app -Dversion=0.1.0 -Dpackage=com.example.myapp
+  -DgroupId=com.example -DartifactId=my-app -Dversion=0.1.0 -Dpackage=com.example.myapp \
+  -DinteractiveMode=false
 ```
 
 (The archetype version and the Medley starter version it wires in both track the framework

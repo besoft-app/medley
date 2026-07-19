@@ -161,7 +161,7 @@ high-frequency interaction. A working example: the **sparkline** island in
 | Dev-tools — patch log, DOM flash, component-tree inspector (`medley.devtools.enabled`) (**Stage 5**) | ✅ done |
 | Wire compression — `permessage-deflate` (RFC 7692), on by default via Tomcat (**Stage 5**) | ✅ done |
 | Maven archetype — scaffold a new app (`docs/getting-started.md`) (**Stage 5**) | ✅ done |
-| Redis session backend | ❌ rejected — sticky sessions are the model (MEDLEY_DESIGN §10.12) |
+| Redis session backend | ❌ rejected — sticky sessions are the model |
 
 The full `./gradlew build` is green: 3 modules compile, **140 core + 74 starter tests** pass (plus a
 dependency-free 40-test client harness, run separately), and the demo bootJar builds.

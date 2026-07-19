@@ -13,6 +13,8 @@
 
   <fileSets>
     <!-- Java sources: filtered (so `package ${package};` is substituted) and packaged. -->
+    <!-- WARNING: filtered=true runs Velocity over these .java files, so any `$identifier` token
+         is silently substituted/eaten — keep such tokens out of archetype Java sources. -->
     <fileSet filtered="true" packaged="true" encoding="UTF-8">
       <directory>src/main/java</directory>
       <includes>
