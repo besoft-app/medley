@@ -1,0 +1,8 @@
+server:
+  port: 8080
+
+# All Medley options (medley.*) are optional and documented in docs/configuration.md.
+# For example, to enable the dev inspector while developing (NEVER in production — it exposes @State):
+# medley:
+#   devtools:
+#     enabled: true

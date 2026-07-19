@@ -31,6 +31,11 @@ gradle wrapper --gradle-version 8.10.2
 **Java 21** is required. Gradle install: https://gradle.org/install/ (e.g. `brew install gradle`,
 `sdk install gradle 8.10.2`).
 
+### Create a new project
+
+To scaffold your own Medley app (not just run the demo), publish the framework to Maven Local and use
+the Maven archetype — see **[docs/getting-started.md](docs/getting-started.md)**.
+
 ---
 
 ## Running the demo
@@ -155,7 +160,8 @@ high-frequency interaction. A working example: the **sparkline** island in
 | Metrics — optional Micrometer (`medley.messages` / `.message.duration` / `.patches`) (**Stage 5**) | ✅ done |
 | Dev-tools — patch log, DOM flash, component-tree inspector (`medley.devtools.enabled`) (**Stage 5**) | ✅ done |
 | Wire compression — `permessage-deflate` (RFC 7692), on by default via Tomcat (**Stage 5**) | ✅ done |
-| Redis session backend, Maven archetype | ⏳ Stage 5 |
+| Maven archetype — scaffold a new app (`docs/getting-started.md`) (**Stage 5**) | ✅ done |
+| Redis session backend | ❌ rejected — sticky sessions are the model |
 
 The full `./gradlew build` is green: 3 modules compile, **140 core + 74 starter tests** pass (plus a
 dependency-free 40-test client harness, run separately), and the demo bootJar builds.
