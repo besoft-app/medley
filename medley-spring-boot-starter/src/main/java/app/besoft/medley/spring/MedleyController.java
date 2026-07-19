@@ -84,15 +84,33 @@ public class MedleyController {
                 button { font-size: 1rem; padding: .4rem .8rem; cursor: pointer; border-radius: .4rem;
                          border: 1px solid #888; background: #f6f6f6; }
                 button:hover { background: #ececec; }
+                /* Medley's two framework elements. A custom shell MUST carry both rules:
+                   medley-text hosts dynamic text so a patch can address it (display:contents means it
+                   generates no box, so layout is identical to bare text), and medley-placeholder holds
+                   the slot of a false *if. */
+                medley-text { display: contents; }
                 medley-placeholder { display: none; }
               </style>
             </head>
             <body>
               <div id="medley-root" data-ws="%s">%s</div>
-              <script src="/medley/medley.js"></script>
+            %s  <script src="/medley/medley.js"></script>
             </body>
             </html>
-            """.formatted(properties.getWebsocketPath(), bodyHtml);
+            """.formatted(properties.getWebsocketPath(), bodyHtml, devToolsScript());
+    }
+
+    /**
+     * The dev-tools overlay (Stage 5, increment 2), when {@code medley.devtools.enabled=true}. It loads
+     * <em>before</em> {@code medley.js}: the inspector taps the patch stream by wrapping {@code WebSocket}
+     * before the runtime opens one, which is what keeps {@code medley.js} free of any dev-tools hook.
+     * With the flag off this contributes nothing — the shell has no reference to the script at all.
+     */
+    private String devToolsScript() {
+        if (!properties.getDevtools().isEnabled()) {
+            return "";
+        }
+        return "  <script src=\"/medley/devtools.js\"></script>\n";
     }
 
     private String notFound(String path) {

@@ -6,6 +6,12 @@
  * the members applyPatch touches (textContent, get/set/removeAttribute, add/removeEventListener,
  * remove, querySelectorAll). It deliberately does NOT parse HTML, so the `replace`/`insert` patch ops
  * (which need htmlToElement) are out of scope here — see the harness README.
+ *
+ * ⚠ NEVER USE THIS TO PROVE THAT A PATCH IS DELIVERABLE. It lets a test fabricate an element carrying
+ * ANY id — including one the server only ever gives to a TEXT NODE — i.e. a DOM the server cannot emit.
+ * That is precisely how a critical bug shipped green (MEDLEY_DESIGN §11a). For anything that depends on
+ * a patch actually finding its target in real server output, use `html-parse.js`, which parses HTML the
+ * way a browser does: adjacent text runs merge, and only elements are addressable.
  */
 function makeDom() {
   const byId = new Map();

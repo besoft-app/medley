@@ -105,6 +105,7 @@ public class DevServer {
               body{font-family:system-ui,sans-serif;margin:3rem}
               .counter{display:flex;gap:.75rem;align-items:center;font-size:1.25rem}
               button{font-size:1rem;padding:.4rem .8rem;cursor:pointer}
+              medley-text{display:contents}
               medley-placeholder{display:none}
             </style></head>
             <body>
@@ -260,8 +261,18 @@ public class DevServer {
         out.flush();
     }
 
+    static final String MEDLEY_JS_PATH =
+            "medley-spring-boot-starter/src/main/resources/static/medley/medley.js";
+
     static String readMedleyJs() throws IOException {
-        File f = new File("/home/claude/medley/medley-spring-boot-starter/src/main/resources/static/medley/medley.js");
-        return new String(java.nio.file.Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8);
+        // Walk up from the working dir so the harness runs from tools/dev-server or the repo root.
+        for (File dir = new File("").getAbsoluteFile(); dir != null; dir = dir.getParentFile()) {
+            File f = new File(dir, MEDLEY_JS_PATH);
+            if (f.isFile()) {
+                return new String(java.nio.file.Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8);
+            }
+        }
+        throw new FileNotFoundException("medley.js not found: run from inside the medley repo (looked for "
+                + MEDLEY_JS_PATH + " up from " + new File("").getAbsolutePath() + ")");
     }
 }

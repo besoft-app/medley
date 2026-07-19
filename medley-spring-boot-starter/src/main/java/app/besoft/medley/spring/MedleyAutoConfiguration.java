@@ -2,6 +2,7 @@ package app.besoft.medley.spring;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -89,9 +90,11 @@ public class MedleyAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public MedleyWebSocketHandler medleyWebSocketHandler(ObjectMapper mapper, PatchEncoder encoder,
-                                                         IslandRegistry islands) {
+                                                         IslandRegistry islands,
+                                                         ObjectProvider<MedleyMetrics> metrics) {
         return new MedleyWebSocketHandler(mapper, encoder, islands,
-                properties.getSecurity().getMaxMessageBytes());
+                properties.getSecurity().getMaxMessageBytes(),
+                metrics.getIfAvailable(() -> MedleyMetrics.NOOP));
     }
 
     @Bean
@@ -102,4 +105,8 @@ public class MedleyAutoConfiguration {
 
     // MedleyWebSocketConfig is @Import-ed (not a @Bean here) so its @EnableWebSocket
     // infrastructure is processed and the endpoint is actually mapped.
+    //
+    // Optional metrics live in MedleyMetricsAutoConfiguration (a separate @ConditionalOnClass
+    // auto-config) so this class never references Micrometer; the handler above falls back to
+    // MedleyMetrics.NOOP when that bean is absent.
 }

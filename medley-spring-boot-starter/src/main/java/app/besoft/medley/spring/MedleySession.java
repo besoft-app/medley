@@ -260,6 +260,12 @@ public class MedleySession implements ComponentHost, HttpSessionBindingListener 
         return instances.containsKey(id);
     }
 
+    /** The ids of every live component in this session (root + nested children), as a snapshot copy.
+     *  Read-only introspection — used by the dev-tools inspector (Stage 5, increment 2). */
+    public Set<String> componentIds() {
+        return Set.copyOf(instances.keySet());
+    }
+
     /** Release the whole component tree (root + all children), cascading {@link Component#onDestroy()}
      *  deepest-first. Idempotent. Called when the owning HTTP session ends (see {@link #valueUnbound}). */
     public void destroyAll() {

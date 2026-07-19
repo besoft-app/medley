@@ -11,6 +11,60 @@ import org.junit.jupiter.api.Test;
 
 class HtmlSerializerTest {
 
+    /**
+     * Dynamic text (an interpolation) is patchable, so it must be addressable: it gets a host element
+     * carrying <b>its own</b> text-node id. Without this the client's {@code [data-medley-id]} lookup
+     * finds nothing and the text patch is silently dropped — see {@link PatchAddressabilityTest}.
+     */
+    @Test
+    void dynamicTextIsWrappedInAnAddressableHost() {
+        VNode v = new VNode.VElement("root.3", "span", Map.of(), Map.of(),
+                List.of(new VNode.VText("root.3.0", "n: "),
+                        new VNode.VText("root.3.1", "0", true)), null);
+        String html = HtmlSerializer.serialize(v);
+        assertEquals("<span data-medley-id=\"root.3\">n: "
+                + "<medley-text data-medley-id=\"root.3.1\">0</medley-text></span>", html);
+    }
+
+    /**
+     * A {@code Replace}/{@code Insert} payload is serialized from the node alone, so the node is the
+     * <b>root</b> of the fragment and has no parent tag. It must still come out as an element: the client
+     * does {@code htmlToElement(html).firstElementChild}, and bare text there is {@code null} — a dropped
+     * patch. (A raw-text guard that asks {@code Set.of(…).contains(parentTag)} throws NPE right here.)
+     */
+    @Test
+    void aTextNodeSerializedAsAPayloadRootIsStillAnElement() {
+        String html = HtmlSerializer.serialize(new VNode.VText("root.1", "x", true));
+        assertEquals("<medley-text data-medley-id=\"root.1\">x</medley-text>", html);
+    }
+
+    /** Static text is never patched, so it stays bare — no marker for every whitespace node. */
+    @Test
+    void staticTextStaysBare() {
+        VNode v = new VNode.VElement("r", "div", Map.of(), Map.of(),
+                List.of(new VNode.VText("r.0", "hello")), null);
+        assertEquals("<div data-medley-id=\"r\">hello</div>", HtmlSerializer.serialize(v));
+    }
+
+    @Test
+    void dynamicTextIsStillEscapedInsideItsHost() {
+        VNode v = new VNode.VElement("r", "div", Map.of(), Map.of(),
+                List.of(new VNode.VText("r.0", "<script>&", true)), null);
+        String html = HtmlSerializer.serialize(v);
+        assertTrue(html.contains(">&lt;script&gt;&amp;</medley-text>"), html);
+    }
+
+    /**
+     * A raw-text element cannot contain a marker (its content model is text), so the renderer hands it a
+     * single text node carrying the element's own id and the patch addresses the element itself.
+     */
+    @Test
+    void rawTextElementGetsNoMarker() {
+        VNode v = new VNode.VElement("r", "textarea", Map.of(), Map.of(),
+                List.of(new VNode.VText("r", "draft", true)), null);
+        assertEquals("<textarea data-medley-id=\"r\">draft</textarea>", HtmlSerializer.serialize(v));
+    }
+
     @Test
     void serializesElementWithIdAndAttrs() {
         VNode v = new VNode.VElement("root", "div",

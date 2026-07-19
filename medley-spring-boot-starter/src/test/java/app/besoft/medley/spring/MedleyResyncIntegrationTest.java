@@ -49,7 +49,7 @@ class MedleyResyncIntegrationTest {
     @Test
     void resyncReplacesRootWithCurrentStateIncludingChildren() throws Exception {
         ResponseEntity<String> ssr = rest.getForEntity("/cards", String.class);
-        assertThat(ssr.getBody()).contains("count: 10");
+        assertThat(ssr.getBody()).contains(">10</medley-text>");
         String cookie = ssr.getHeaders().getFirst(HttpHeaders.SET_COOKIE).split(";", 2)[0];
 
         BlockingQueue<String> inbound = new LinkedBlockingQueue<>();
@@ -81,7 +81,7 @@ class MedleyResyncIntegrationTest {
             assertThat(patches.get(0).get("id").asText()).isEqualTo("root");
             assertThat(patches.get(0).get("html").asText())
                     .as("resync HTML must reflect the child's current state")
-                    .contains("count: 11")
+                    .contains(">11</medley-text>")
                     .contains("data-medley-cid=\"root.1::counter-card\"");
         } finally {
             ws.close();

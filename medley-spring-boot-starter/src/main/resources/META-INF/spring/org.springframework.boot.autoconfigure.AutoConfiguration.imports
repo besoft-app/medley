@@ -1,1 +1,4 @@
 app.besoft.medley.spring.MedleyAutoConfiguration
+app.besoft.medley.spring.MedleyMetricsAutoConfiguration
+app.besoft.medley.spring.MedleyDevToolsAutoConfiguration
+app.besoft.medley.spring.MedleySpringSessionGuard
