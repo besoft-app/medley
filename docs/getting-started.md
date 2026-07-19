@@ -17,8 +17,8 @@ From the repository root:
 ./gradlew publishToMavenLocal
 ```
 
-This installs `app.besoft.medley:medley-core:0.5.0` and
-`app.besoft.medley:medley-spring-boot-starter:0.5.0` into `~/.m2`.
+This installs `app.besoft.medley:medley-core:0.6.0` and
+`app.besoft.medley:medley-spring-boot-starter:0.6.0` into `~/.m2`.
 
 ## 2. Install the archetype
 
@@ -35,13 +35,13 @@ From any directory:
 mvn archetype:generate \
   -DarchetypeGroupId=app.besoft.medley \
   -DarchetypeArtifactId=medley-archetype \
-  -DarchetypeVersion=0.5.0 \
+  -DarchetypeVersion=0.6.0 \
   -DgroupId=com.example -DartifactId=my-app -Dversion=0.1.0 -Dpackage=com.example.myapp \
   -DinteractiveMode=false
 ```
 
 (The archetype version and the Medley starter version it wires in both track the framework
-version — `0.5.0` here. Bump `-DarchetypeVersion` when the framework version bumps.)
+version — `0.6.0` here. Bump `-DarchetypeVersion` when the framework version bumps.)
 
 ## 4. Run it
 
