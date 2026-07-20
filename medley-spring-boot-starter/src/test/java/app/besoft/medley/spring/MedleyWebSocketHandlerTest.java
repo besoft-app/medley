@@ -60,7 +60,7 @@ class MedleyWebSocketHandlerTest {
         assertThat(steady.isArray()).isTrue();
         assertThat(steady).hasSize(1);
         assertThat(steady.get(0).get("op").asText()).isEqualTo("text");
-        assertThat(steady.get(0).get("id").asText()).isEqualTo("root.3.2");
+        assertThat(steady.get(0).get("id").asText()).isEqualTo("root.1.2");
         assertThat(steady.get(0).get("value").asText()).isEqualTo("2");
     }
 

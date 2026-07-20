@@ -70,7 +70,7 @@ class MedleyIslandCommitTest {
             // The island's client DOM is opaque: it is never replaced/inserted/removed by a diff.
             assertThat(p.get("op").asText()).isNotIn("replace", "insert", "remove");
             if (p.get("op").asText().equals("attr")
-                    && p.get("id").asText().equals("root.1")
+                    && p.get("id").asText().equals("root.0")
                     && p.get("name").asText().equals("data-value")) {
                 assertThat(p.get("value").asText()).isEqualTo("7");
                 propsPushed = true;

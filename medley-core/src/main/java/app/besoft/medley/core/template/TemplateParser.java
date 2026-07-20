@@ -1,5 +1,7 @@
 package app.besoft.medley.core.template;
 
+import app.besoft.medley.core.vnode.Html;
+
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -131,6 +133,13 @@ public final class TemplateParser {
         } else {
             children = parseChildren();
             parseCloseTag(tag);
+            // Inter-element whitespace (indentation between child tags) is insignificant: it must not
+            // occupy a child position, or a keyed container authored with indentation would carry
+            // keyless whitespace nodes and drop to positional diffing. Raw-text elements are exempt —
+            // their whitespace is real content (see Html.RAW_TEXT_TAGS).
+            if (!Html.isRawText(tag)) {
+                children = stripInsignificantWhitespace(children);
+            }
         }
 
         return new TemplateNode.Element(
@@ -157,6 +166,41 @@ public final class TemplateParser {
             sb.append(next());
         }
         return new TemplateNode.Text(sb.toString());
+    }
+
+    /**
+     * Drop pure-whitespace text runs that sit purely between elements (or at a container edge next to an
+     * element). A blank run adjacent to literal text or an interpolation on either side is kept — that is
+     * meaningful spacing around inline/dynamic content (e.g. {@code {{ a }} {{ b }}} word separation).
+     * The parser only ever breaks a text run at {@code <} or <code>&#123;&#123;</code>, so a blank run is
+     * always one of these structural gaps.
+     */
+    private static List<TemplateNode> stripInsignificantWhitespace(List<TemplateNode> children) {
+        List<TemplateNode> out = new ArrayList<>(children.size());
+        for (int i = 0; i < children.size(); i++) {
+            TemplateNode c = children.get(i);
+            if (c instanceof TemplateNode.Text t && t.value().isBlank()) {
+                TemplateNode left = i > 0 ? children.get(i - 1) : null;
+                TemplateNode right = i + 1 < children.size() ? children.get(i + 1) : null;
+                if (!isInlineContent(left) && !isInlineContent(right)) {
+                    continue; // insignificant inter-element whitespace — drop
+                }
+            }
+            out.add(c);
+        }
+        return out;
+    }
+
+    /**
+     * A neighbour carries inline content — making adjacent whitespace significant — when it is an
+     * interpolation or a <em>non-blank</em> text run. A blank text run does <em>not</em> protect adjacent
+     * whitespace: a comment between two elements splits the gap into two adjacent blank runs, and neither
+     * may shield the other from the strip (else a keyed container with an interspersed comment would keep
+     * keyless whitespace nodes and drop to positional diffing).
+     */
+    private static boolean isInlineContent(TemplateNode n) {
+        return n instanceof TemplateNode.Interpolation
+                || (n instanceof TemplateNode.Text t && !t.value().isBlank());
     }
 
     // --- tag helpers ---

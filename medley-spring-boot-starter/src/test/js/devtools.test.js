@@ -33,7 +33,7 @@ test("honours a custom configured websocket path", () => {
 // `parentId`/`index`. Getting a field name wrong makes the inspector lie, which is worse than useless —
 // so the whole op set is pinned.
 test("describes every patch op the server can emit", () => {
-  assert.equal(devtools.describePatch({ op: "text", id: "root.3.2", value: "2" }), 'text root.3.2 = "2"');
+  assert.equal(devtools.describePatch({ op: "text", id: "root.1.2", value: "2" }), 'text root.1.2 = "2"');
   assert.equal(devtools.describePatch({ op: "attr", id: "root.1", name: "class", value: "on" }),
     'attr root.1 class="on"');
   assert.equal(devtools.describePatch({ op: "removeAttr", id: "root.1", name: "class" }),
@@ -55,7 +55,7 @@ test("describes the control messages", () => {
 
 // ---- summarize / formatOps: the minimal-diff property, made visible ----
 test("summarizes the steady-state single text patch", () => {
-  const s = devtools.summarize([{ op: "text", id: "root.3.2", value: "2" }]);
+  const s = devtools.summarize([{ op: "text", id: "root.1.2", value: "2" }]);
   assert.deepEqual(s, { count: 1, ops: { text: 1 } });
   assert.equal(devtools.formatOps(s.ops), "text");
 });
