@@ -11,10 +11,11 @@ import app.besoft.medley.core.vnode.VNode;
 import org.junit.jupiter.api.Test;
 
 /**
- * End-to-end keyed {@code *for}: render a real (whitespace-tight) list template, mutate the
- * backing list, diff, and assert the minimal patch set. The container is authored tightly so
- * every child of the loop parent is a keyed element (see {@code DifferTest} for why interspersed
- * whitespace would drop to positional diffing).
+ * End-to-end keyed {@code *for}: render a real list template, mutate the backing list, diff, and
+ * assert the minimal patch set. Keyed reconciliation requires every child of the loop parent to be a
+ * keyed element (see {@code DifferTest}); since Stage 6.1 the parser strips insignificant inter-element
+ * whitespace, so a container authored either tightly ({@link #LIST}) or loosely with indentation
+ * ({@link #LOOSE_LIST}) reconciles identically — {@link #looselyAuthoredListEmitsASingleInsert}.
  */
 class KeyedForRenderTest {
 
@@ -56,6 +57,27 @@ class KeyedForRenderTest {
         List<Patch> patches = Differ.diff(before, after);
         assertEquals(1, patches.size());
         assertEquals("root.0[2]", ((Patch.Remove) patches.get(0)).id());
+    }
+
+    /** A list container authored loosely (newlines/indentation around the {@code *for} element) must
+     *  reconcile identically to the tight one: 6.1 strips the insignificant inter-element whitespace at
+     *  parse time, so the {@code <ul>}'s only child is the keyed loop element and keyed diffing engages. */
+    private static final TemplateRenderer LOOSE_LIST = TemplateRenderer.of(
+            "<ul>\n  <li *for=\"row : rows\" key=\"row.id\">{{ row.name }}</li>\n</ul>");
+
+    @Test
+    void looselyAuthoredListEmitsASingleInsert() {
+        Ctx ctx = new Ctx(new ArrayList<>(List.of(new Row("1", "one"), new Row("2", "two"))));
+        VNode before = LOOSE_LIST.render("root", ctx);
+        ctx.rows.add(new Row("3", "three"));
+        VNode after = LOOSE_LIST.render("root", ctx);
+
+        List<Patch> patches = Differ.diff(before, after);
+        assertEquals(1, patches.size());
+        Patch.Insert insert = (Patch.Insert) patches.get(0);
+        assertEquals("root.0[3]", insert.id());
+        assertEquals("root", insert.parentId());
+        assertEquals(2, insert.index());
     }
 
     @Test

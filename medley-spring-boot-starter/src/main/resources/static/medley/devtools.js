@@ -33,7 +33,7 @@
   }
 
   /**
-   * One patch as a short human-readable line, e.g. `text root.3.2 = "2"`. Field names follow the wire
+   * One patch as a short human-readable line, e.g. `text root.1.2 = "2"`. Field names follow the wire
    * exactly (see PatchEncoder): `attr`/`removeAttr` carry `name`, `event`/`removeEvent` carry `event`
    * (+ `action`), `insert` carries `parentId`/`index`.
    */

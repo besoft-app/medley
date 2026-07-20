@@ -28,7 +28,7 @@ import org.springframework.web.socket.handler.TextWebSocketHandler;
 /**
  * End-to-end proof over a real Spring WebSocket — the Stage-2 equivalent of the dev-server
  * proof: a steady-state increment produces exactly one text patch
- * {@code {"op":"text","id":"root.3.2","value":"2"}}.
+ * {@code {"op":"text","id":"root.1.2","value":"2"}}.
  *
  * <p>Flow: SSR {@code GET /counter} creates the HTTP session + mounted component tree; the WS
  * handshake carries that session's cookie so the handler dispatches to the same instance.</p>
@@ -82,7 +82,7 @@ class MedleyWebSocketLoopIntegrationTest {
             assertThat(patches.isArray()).isTrue();
             assertThat(patches).hasSize(1);
             assertThat(patches.get(0).get("op").asText()).isEqualTo("text");
-            assertThat(patches.get(0).get("id").asText()).isEqualTo("root.3.2");
+            assertThat(patches.get(0).get("id").asText()).isEqualTo("root.1.2");
             assertThat(patches.get(0).get("value").asText()).isEqualTo("2");
         } finally {
             ws.close();
