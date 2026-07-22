@@ -41,6 +41,8 @@ public final class TemplateRenderer {
     private final TemplateNode.Element root;
     /** Resolves {@code <medley-partial>} fragments; null when partials are unsupported (e.g. tests). */
     private final PartialResolver partials;
+    /** Memoised — a renderer is shared across sessions, so this is computed at most once per template. */
+    private volatile Boolean mayDeclareSlot;
 
     public TemplateRenderer(TemplateNode.Element root) {
         this(root, null);
@@ -101,6 +103,38 @@ public final class TemplateRenderer {
             throw new TemplateException("Template root must render exactly one element");
         }
         return nodes.get(0);
+    }
+
+    /**
+     * True when this template could expand a {@code <medley-slot>} — it contains one, or contains a
+     * {@code <medley-partial>} whose fragment might. Used to reject body content given to a component
+     * that can never render it (Stage 6, increment 6.2).
+     *
+     * <p>Deliberately a <b>static</b> scan of the parsed template, not an observation of a render: a
+     * slot behind a false {@code *if} is still declared, and failing then would be a false alarm.</p>
+     */
+    public boolean mayDeclareSlot() {
+        Boolean cached = mayDeclareSlot;
+        if (cached == null) {
+            cached = scanForSlot(root);
+            mayDeclareSlot = cached;
+        }
+        return cached;
+    }
+
+    private static boolean scanForSlot(TemplateNode node) {
+        if (!(node instanceof TemplateNode.Element el)) {
+            return false;
+        }
+        if (SLOT_TAG.equals(el.tag()) || PARTIAL_TAG.equals(el.tag())) {
+            return true;
+        }
+        for (TemplateNode child : el.children()) {
+            if (scanForSlot(child)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** Returns a list because *for can expand one template node into many VNodes. */

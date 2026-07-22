@@ -62,9 +62,20 @@ public final class ComponentInstance {
         return projection;
     }
 
-    /** Set the content projected from the parent. Null is normalised to {@link Projection#EMPTY}. */
+    /**
+     * Set the content projected from the parent. Null is normalised to {@link Projection#EMPTY}.
+     *
+     * <p>Rejects body content given to a component whose template can never render it: a silent drop
+     * would hide the author's typo, and the projected nodes would then be diffed against a DOM that
+     * never received them.</p>
+     */
     public void setProjection(Projection projection) {
-        this.projection = projection == null ? Projection.EMPTY : projection;
+        Projection p = projection == null ? Projection.EMPTY : projection;
+        if (!p.isEmpty() && !renderer.mayDeclareSlot()) {
+            throw new TemplateException("Component '" + id + "' declares no <medley-slot>, but its "
+                    + "<medley-component> boundary was given body content");
+        }
+        this.projection = p;
     }
 
     /** Initial render: builds the first VNode tree and returns its HTML for SSR. */

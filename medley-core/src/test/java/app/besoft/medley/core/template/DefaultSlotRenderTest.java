@@ -1,7 +1,9 @@
 package app.besoft.medley.core.template;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.HashMap;
@@ -10,7 +12,10 @@ import java.util.Map;
 import java.util.function.Supplier;
 
 import app.besoft.medley.core.component.Annotations;
+import app.besoft.medley.core.component.Component;
+import app.besoft.medley.core.component.ComponentInstance;
 import app.besoft.medley.core.component.ParamBinder;
+import app.besoft.medley.core.diff.HtmlSerializer;
 import app.besoft.medley.core.vnode.VNode;
 import org.junit.jupiter.api.Test;
 
@@ -147,6 +152,73 @@ class DefaultSlotRenderTest {
         // ul is the projection's second node (root.0.1); its keyed items are its own children.
         assertEquals("root.0.1.0[a]", firstLi.id(), "keyed *for ids stay in the parent's space");
         assertEquals("a", firstLi.key());
+    }
+
+    @Test
+    void bodyContentForASlotlessChildIsRejected() {
+        // Catching the author's typo beats silently swallowing the content.
+        TemplateRenderer slotless = TemplateRenderer.of("<section><h3>{{ title }}</h3></section>");
+        assertFalse(slotless.mayDeclareSlot());
+
+        ComponentInstance child = new ComponentInstance("root.0::panel", new PanelComponent(), slotless);
+        Projection projection = new Projection("root",
+                List.of(new VNode.VText("root.0.0", "hi", true)));
+
+        TemplateException e = assertThrows(TemplateException.class,
+                () -> child.setProjection(projection));
+        assertTrue(e.getMessage().contains("medley-slot"), e.getMessage());
+    }
+
+    @Test
+    void aTemplateUsingPartialsIsNotRejected() {
+        // A slot may live inside a partial fragment, which a static scan of this template cannot see,
+        // so the guard must stay silent rather than raise a false alarm.
+        TemplateRenderer viaPartial = TemplateRenderer.of(
+                "<section><medley-partial name=\"body\"></medley-partial></section>");
+        assertTrue(viaPartial.mayDeclareSlot());
+    }
+
+    @Test
+    void aSlotHiddenByAFalseIfIsStillDeclared() {
+        // The guard is a STATIC scan on purpose: a runtime check would fire spuriously here.
+        TemplateRenderer conditional = TemplateRenderer.of(
+                "<section><medley-slot *if=\"open\"></medley-slot></section>");
+        assertTrue(conditional.mayDeclareSlot());
+    }
+
+    @Test
+    void twoSlotsInOneRenderAreRejected() {
+        // Splicing the same projection twice would emit duplicate data-medley-ids and break the
+        // addressability invariant (MEDLEY_DESIGN §11a).
+        FakeHost h = new FakeHost().add("panel", Panel::new,
+                "<section><medley-slot></medley-slot><medley-slot></medley-slot></section>");
+        assertThrows(TemplateException.class, () -> render(
+                "<div><medley-component name=\"panel\" title=\"T\"><p>x</p></medley-component></div>",
+                h, new Owner()));
+    }
+
+    @Test
+    void everyProjectedIdIsCarriedByAnElementInTheSerializedHtml() {
+        // §11a: whatever the differ can address must exist as an element in the served HTML.
+        FakeHost h = new FakeHost().add("panel", Panel::new, PANEL_TPL);
+        VNode tree = render(
+                "<div><medley-component name=\"panel\" title=\"T\">"
+              + "<p>clicks: {{ clicks }}</p>"
+              + "</medley-component></div>", h, new Owner());
+
+        String html = HtmlSerializer.serialize(tree);
+        assertTrue(html.contains("<medley-slot data-medley-id=\"root.0::panel.1\""),
+                "the slot is a real element: " + html);
+        assertTrue(html.contains("data-medley-cid=\"root\""), "cid reaches the DOM: " + html);
+        assertTrue(html.contains("<medley-text data-medley-id=\"root.0.0.1\""),
+                "the projected interpolation has its own addressable host: " + html);
+    }
+
+    /** A minimal {@link Component} for the instance-level guard test (setProjection needs a real one). */
+    @Annotations.MedleyComponent("panel")
+    static class PanelComponent extends Component {
+        @Annotations.Param String title = "";
+        public String getTitle() { return title; }
     }
 
     private static String text(VNode.VElement el) {
