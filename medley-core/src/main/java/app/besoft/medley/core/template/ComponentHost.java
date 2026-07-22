@@ -34,15 +34,18 @@ public interface ComponentHost {
      * @param params  resolved param values by attribute name (owner-evaluated for {@code :attr})
      * @param outputs output bindings by output name → owner-action binding (the {@code @event} entries
      *                on the boundary, e.g. {@code "save" -> "onSave($event)"}); wired once at mount
+     * @param projection content the parent authored inside the boundary, already rendered in the
+     *                parent's scope and id-space; the child splices it at its {@code <medley-slot>}
+     *                (Stage 6, increment 6.2). {@link Projection#EMPTY} when the boundary has no body
      * @param depth   the expansion depth to render the child at (for the recursion guard)
      * @return the child's current subtree, or {@code null} if no component is registered under {@code name}
      */
     VNode mountChild(String childId, String name, Map<String, Object> params,
-                     Map<String, String> outputs, int depth);
+                     Map<String, String> outputs, Projection projection, int depth);
 
-    /** Convenience overload for a boundary with no {@code @Output} bindings (and for callers/tests
-     *  that predate child→parent callbacks). Delegates with an empty output map. */
+    /** Convenience overload for a boundary with neither {@code @Output} bindings nor body content
+     *  (and for callers/tests that predate child→parent callbacks and slots). */
     default VNode mountChild(String childId, String name, Map<String, Object> params, int depth) {
-        return mountChild(childId, name, params, Map.of(), depth);
+        return mountChild(childId, name, params, Map.of(), Projection.EMPTY, depth);
     }
 }

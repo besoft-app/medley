@@ -52,7 +52,7 @@ class NestedComponentRenderTest {
 
         @Override
         public VNode mountChild(String childId, String name, Map<String, Object> params,
-                                Map<String, String> outputs, int depth) {
+                                Map<String, String> outputs, Projection projection, int depth) {
             if (!comps.containsKey(name)) return null;
             Mounted existing = mounted.get(childId);
             if (existing != null) return existing.tree(); // reuse — @State survives a parent re-render
@@ -60,7 +60,7 @@ class NestedComponentRenderTest {
             Object c = comps.get(name).get();
             ParamBinder.inject(c, params);
             TemplateRenderer r = TemplateRenderer.of(templates.get(name));
-            VNode tree = r.render(childId, c, depth, this);
+            VNode tree = r.render(childId, c, depth, this, projection);
             mounted.put(childId, new Mounted(c, r, tree));
             return tree;
         }
