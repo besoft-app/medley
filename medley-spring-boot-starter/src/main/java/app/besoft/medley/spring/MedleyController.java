@@ -84,12 +84,14 @@ public class MedleyController {
                 button { font-size: 1rem; padding: .4rem .8rem; cursor: pointer; border-radius: .4rem;
                          border: 1px solid #888; background: #f6f6f6; }
                 button:hover { background: #ececec; }
-                /* Medley's two framework elements. A custom shell MUST carry both rules:
+                /* Medley's three framework elements. A custom shell MUST carry all three rules:
                    medley-text hosts dynamic text so a patch can address it (display:contents means it
-                   generates no box, so layout is identical to bare text), and medley-placeholder holds
-                   the slot of a false *if. */
+                   generates no box, so layout is identical to bare text), medley-placeholder holds
+                   the slot of a false *if, and medley-slot is where a child component splices the
+                   content its parent projected — it must not introduce a box of its own either. */
                 medley-text { display: contents; }
                 medley-placeholder { display: none; }
+                medley-slot { display: contents; }
               </style>
             </head>
             <body>
