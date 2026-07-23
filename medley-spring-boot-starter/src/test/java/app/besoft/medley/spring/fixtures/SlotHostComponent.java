@@ -17,11 +17,20 @@ import app.besoft.medley.spring.MedleyRoute;
 public class SlotHostComponent extends Component {
 
     @State int clicks = 0;
+    /** Parent state that is NOT projected — rendered after the boundary, so its patch proves a parent
+     *  action on non-projected state never reaches the child (root.2, keeping the boundary at root.1). */
+    @State int notes = 0;
 
     @Action
     public void bump() {
         clicks++;
     }
 
+    @Action
+    public void nudge() {
+        notes++;
+    }
+
     public int getClicks() { return clicks; }
+    public int getNotes() { return notes; }
 }

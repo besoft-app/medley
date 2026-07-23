@@ -47,6 +47,7 @@ class MedleyDefaultSlotIntegrationTest {
     private static final String CHILD_CID = "root.1::slot-panel";
     private static final String PROJECTED_TEXT_ID = "root.1.0.0";
     private static final String BUMP = "{\"componentId\":\"root\",\"action\":\"bump\"}";
+    private static final String NUDGE = "{\"componentId\":\"root\",\"action\":\"nudge\"}";
     private static final String TICK = "{\"componentId\":\"" + CHILD_CID + "\",\"action\":\"tick\"}";
 
     @Test
@@ -88,6 +89,24 @@ class MedleyDefaultSlotIntegrationTest {
             assertThat(patches.get(0).get("id").asText())
                     .as("the child patches only its own subtree")
                     .isEqualTo(CHILD_CID + ".3.0");
+            assertThat(patches.get(0).get("value").asText()).isEqualTo("1");
+        }
+    }
+
+    @Test
+    void aParentActionOnNonProjectedStateNeverTouchesTheChild() throws Exception {
+        // The opaque-boundary half of the DoD, re-locked with a projection present: changing parent
+        // state that is NOT inside the slot must patch only the parent's own node (root.2.0) and emit
+        // nothing under the child — and the unchanged projection must not spuriously cascade either.
+        try (Ws ws = Ws.open(rest, port, "/panel")) {
+            ws.send(NUDGE);
+            JsonNode patches = ws.receive();
+
+            assertThat(patches).as("one patch — the child boundary is opaque and the projection is unchanged")
+                    .hasSize(1);
+            assertThat(patches.get(0).get("id").asText())
+                    .as("only the parent's own non-projected node moved")
+                    .isEqualTo("root.2.0");
             assertThat(patches.get(0).get("value").asText()).isEqualTo("1");
         }
     }

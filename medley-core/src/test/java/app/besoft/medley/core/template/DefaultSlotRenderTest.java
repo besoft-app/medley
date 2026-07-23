@@ -214,11 +214,69 @@ class DefaultSlotRenderTest {
                 "the projected interpolation has its own addressable host: " + html);
     }
 
+    @Test
+    void aProjectionChangingItsNodeCountEmitsOneInsertThenOneRemoveInTheParentSpace() {
+        // The mechanism's subtlest property: because projected nodes carry parent ids, an add/remove in
+        // the projection surfaces through the CHILD's own differ as a single Insert/Remove addressed in
+        // the PARENT's id-space, inserted into the child's slot. This is what a projected keyed *for grows/
+        // shrinks into.
+        ComponentInstance child = new ComponentInstance(
+                "root.0::panel", new PanelComponent(), TemplateRenderer.of(PANEL_TPL));
+        VNode.VElement a = p("root.0", "a");
+        VNode.VElement b = p("root.1", "b");
+        VNode.VElement c = p("root.2", "c");
+
+        child.setProjection(new Projection("root", List.of(a, b)));
+        child.renderTree(0); // baseline
+
+        child.setProjection(new Projection("root", List.of(a, b, c)));
+        List<app.besoft.medley.core.diff.Patch> grew = child.renderToPatches();
+        assertEquals(1, grew.size(), grew.toString());
+        var ins = (app.besoft.medley.core.diff.Patch.Insert) grew.get(0);
+        assertEquals("root.2", ins.id(), "the new projected node keeps a parent id");
+        assertEquals("root.0::panel.1", ins.parentId(), "and is inserted into the child's slot");
+
+        child.setProjection(new Projection("root", List.of(a, b)));
+        List<app.besoft.medley.core.diff.Patch> shrank = child.renderToPatches();
+        assertEquals(1, shrank.size(), shrank.toString());
+        assertEquals("root.2", ((app.besoft.medley.core.diff.Patch.Remove) shrank.get(0)).id());
+    }
+
+    @Test
+    void aComponentNestedInsideProjectedContentIsOwnedByTheParent() {
+        // Wrapper/layout components are the point of Stage 6: a projected <medley-component> must mount
+        // under a parent-derived host id and be owned by the parent, not the wrapper it renders inside.
+        FakeHost h = new FakeHost()
+                .add("panel", Panel::new, PANEL_TPL)
+                .add("inner", Panel::new, "<em>{{ title }}</em>");
+        VNode.VElement div = (VNode.VElement) render(
+                "<div><medley-component name=\"panel\" title=\"outer\">"
+              + "<medley-component name=\"inner\" title=\"in\"></medley-component>"
+              + "</medley-component></div>", h, new Owner());
+
+        VNode.VElement outer = (VNode.VElement) div.children().get(0);
+        VNode.VElement panelRoot = (VNode.VElement) outer.children().get(0);
+        VNode.VElement slot = (VNode.VElement) panelRoot.children().get(1);
+        VNode.VElement innerHost = (VNode.VElement) slot.children().get(0);
+
+        assertEquals("medley-component", innerHost.tag());
+        assertEquals("root.0.0", innerHost.id(), "the projected boundary takes a parent-space host id");
+        assertEquals("root.0.0::inner", innerHost.attrs().get("data-medley-cid"));
+        assertEquals("root", app.besoft.medley.core.diff.IdPaths.ownerComponentId("root.0.0::inner"),
+                "so a projected child's actions route to the parent, not the wrapper");
+    }
+
     /** A minimal {@link Component} for the instance-level guard test (setProjection needs a real one). */
     @Annotations.MedleyComponent("panel")
     static class PanelComponent extends Component {
         @Annotations.Param String title = "";
         public String getTitle() { return title; }
+    }
+
+    /** A projected {@code <p>text</p>} with a stable parent-space id. */
+    private static VNode.VElement p(String id, String value) {
+        return new VNode.VElement(id, "p", Map.of(), Map.of(),
+                List.of(new VNode.VText(id + ".0", value)), null);
     }
 
     private static String text(VNode.VElement el) {
