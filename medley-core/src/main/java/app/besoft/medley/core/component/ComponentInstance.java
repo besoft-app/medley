@@ -4,6 +4,7 @@ import app.besoft.medley.core.diff.Differ;
 import app.besoft.medley.core.diff.HtmlSerializer;
 import app.besoft.medley.core.diff.Patch;
 import app.besoft.medley.core.template.ComponentHost;
+import app.besoft.medley.core.template.Projection;
 import app.besoft.medley.core.template.TemplateException;
 import app.besoft.medley.core.template.TemplateRenderer;
 import app.besoft.medley.core.vnode.VNode;
@@ -32,6 +33,8 @@ public final class ComponentInstance {
     private final ComponentHost host;
 
     private VNode lastTree;
+    /** Content the parent projected into this instance's {@code <medley-slot>}; set by the host. */
+    private Projection projection = Projection.EMPTY;
 
     public ComponentInstance(String id, Component component, TemplateRenderer renderer) {
         this(id, component, renderer, null);
@@ -54,10 +57,31 @@ public final class ComponentInstance {
         return component;
     }
 
+    /** The content this instance currently renders into its {@code <medley-slot>} (6.2). */
+    public Projection projection() {
+        return projection;
+    }
+
+    /**
+     * Set the content projected from the parent. Null is normalised to {@link Projection#EMPTY}.
+     *
+     * <p>Rejects body content given to a component whose template can never render it: a silent drop
+     * would hide the author's typo, and the projected nodes would then be diffed against a DOM that
+     * never received them.</p>
+     */
+    public void setProjection(Projection projection) {
+        Projection p = projection == null ? Projection.EMPTY : projection;
+        if (!p.isEmpty() && !renderer.mayDeclareSlot()) {
+            throw new TemplateException("Component '" + id + "' declares no <medley-slot>, but its "
+                    + "<medley-component> boundary was given body content");
+        }
+        this.projection = p;
+    }
+
     /** Initial render: builds the first VNode tree and returns its HTML for SSR. */
     public String renderInitialHtml() {
         component.onInit();
-        lastTree = renderer.render(id, component, host);
+        lastTree = renderer.render(id, component, 0, host, projection);
         return HtmlSerializer.serialize(lastTree);
     }
 
@@ -69,7 +93,7 @@ public final class ComponentInstance {
      * tree, and {@code lastTree} becomes the baseline the client is now in sync with.
      */
     public String resyncHtml() {
-        lastTree = renderer.render(id, component, host);
+        lastTree = renderer.render(id, component, 0, host, projection);
         return HtmlSerializer.serialize(lastTree);
     }
 
@@ -80,7 +104,7 @@ public final class ComponentInstance {
      * is threaded so the recursion guard sees the true nesting across the boundary.
      */
     public VNode renderTree(int depth) {
-        lastTree = renderer.render(id, component, depth, host);
+        lastTree = renderer.render(id, component, depth, host, projection);
         return lastTree;
     }
 
@@ -91,7 +115,7 @@ public final class ComponentInstance {
 
     /** Re-render and diff against the previous tree. Call after state mutations. */
     public List<Patch> renderToPatches() {
-        VNode next = renderer.render(id, component, host);
+        VNode next = renderer.render(id, component, 0, host, projection);
         List<Patch> patches = (lastTree == null)
                 ? List.of() // nothing to diff against; caller should have used renderInitialHtml
                 : Differ.diff(lastTree, next);

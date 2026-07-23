@@ -30,6 +30,15 @@ test("walks up through plain elements to the nearest cid", () => {
   assert.equal(medley.ownerComponentId(leaf), "root.1::x");
 });
 
+test("a slot's cid wins over the boundary it is nested in (projected content is the parent's)", () => {
+  // Stage 6.2: projected content sits INSIDE the child's boundary in the DOM, so without the cid on
+  // <medley-slot> a projected @click would dispatch to the child, which has no such action.
+  const boundary = el("root.1::panel", null);
+  const slot = el("root", boundary);
+  const projectedButton = el(null, slot);
+  assert.equal(medley.ownerComponentId(projectedButton), "root");
+});
+
 test("stops at the nearest boundary when boundaries are nested", () => {
   const outer = el("root::a", null);
   const inner = el("root::a.0::b", outer);

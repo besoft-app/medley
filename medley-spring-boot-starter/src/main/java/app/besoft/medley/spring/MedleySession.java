@@ -8,6 +8,7 @@ import app.besoft.medley.core.diff.IdPaths;
 import app.besoft.medley.core.diff.Patch;
 import app.besoft.medley.core.template.ChildComponentFactory;
 import app.besoft.medley.core.template.ComponentHost;
+import app.besoft.medley.core.template.Projection;
 import app.besoft.medley.core.template.TemplateException;
 import app.besoft.medley.core.template.TemplateRenderer;
 import app.besoft.medley.core.vnode.VNode;
@@ -49,6 +50,13 @@ import jakarta.servlet.http.HttpSessionBindingListener;
  * buffered child patches to the owner's — the opaque boundary keeps the owner diff from also emitting
  * them, so props-down reaches nested children in the same single response.</p>
  *
+ * <p><b>Children projection (Stage 6, increment 6.2):</b> content the parent authored inside a
+ * boundary is rendered in the <em>parent's</em> scope and handed down here as a
+ * {@link Projection}. When a parent re-render changes it, the child is given the new nodes and
+ * re-rendered; because the projected nodes carry parent ids, the child's own diff emits them in the
+ * parent's id-space, and they ride back on the same cascade as props-down. A slot is therefore not a
+ * second diff loop — it reuses this one.</p>
+ *
  * <p><b>Eviction + cap (Stage 4, increment 4b.3b):</b> a child whose boundary structurally disappears
  * this pass (an {@code *if} turning false → a {@code Replace} host→placeholder, or a dropped keyed
  * {@code *for} item → a {@code Remove}) is evicted: {@link #evictByPatches(List)} drops every
@@ -76,6 +84,8 @@ public class MedleySession implements ComponentHost, HttpSessionBindingListener 
     private final Map<String, ComponentInstance> instances = new ConcurrentHashMap<>();
     /** Last-injected bound param values per child id, so a re-render only re-injects on real change. */
     private final Map<String, Map<String, Object>> lastParams = new ConcurrentHashMap<>();
+    /** Last projection handed to each child, so a re-render only re-renders it on real change. */
+    private final Map<String, Projection> lastProjection = new ConcurrentHashMap<>();
     /** Patches cascaded from children re-rendered during the current owner render (see class doc).
      *  Touched only on the render/WS thread, bracketed by resetRenderCycle()/drainCascade(). */
     private final List<Patch> cascade = new ArrayList<>();
@@ -116,15 +126,26 @@ public class MedleySession implements ComponentHost, HttpSessionBindingListener 
      */
     @Override
     public VNode mountChild(String childId, String name, Map<String, Object> params,
-                            Map<String, String> outputs, int depth) {
+                            Map<String, String> outputs, Projection projection, int depth) {
         thisPassTouched.add(childId);
         ComponentInstance existing = instances.get(childId);
         if (existing != null) {
-            if (!params.equals(lastParams.get(childId))) {
+            boolean paramsChanged = !params.equals(lastParams.get(childId));
+            // Children projection (6.2): the parent re-rendered its body, so the child must splice the
+            // NEW nodes. The child's own diff then emits them in the parent's id-space — the same
+            // cascade seam as props-down, which is why no separate projection-diff exists.
+            boolean projectionChanged = !projection.equals(lastProjection.get(childId));
+            if (paramsChanged) {
                 ParamBinder.inject(existing.component(), params);
                 existing.component().onParamChange();
-                cascade.addAll(existing.renderToPatches());
                 lastParams.put(childId, new LinkedHashMap<>(params));
+            }
+            if (projectionChanged) {
+                existing.setProjection(projection);
+                lastProjection.put(childId, projection);
+            }
+            if (paramsChanged || projectionChanged) {
+                cascade.addAll(existing.renderToPatches());
             }
             return existing.currentTree(); // outputs are static — wired once at creation, not on reuse
         }
@@ -138,11 +159,13 @@ public class MedleySession implements ComponentHost, HttpSessionBindingListener 
         // the owner's patches into the cascade so they ride back with the child's own response.
         wireOutputs(childId, childComponent, outputs);
         ComponentInstance child = new ComponentInstance(childId, childComponent, created.renderer(), this);
+        child.setProjection(projection);
         // Render before registering, so a template that fails to render does not leave a
         // half-mounted instance (with a null currentTree) behind for a later action to hit.
         VNode tree = child.renderTree(depth);
         instances.put(childId, child);
         lastParams.put(childId, new LinkedHashMap<>(params));
+        lastProjection.put(childId, projection);
         return tree;
     }
 
@@ -271,6 +294,7 @@ public class MedleySession implements ComponentHost, HttpSessionBindingListener 
     public void destroyAll() {
         evictAll(new ArrayList<>(instances.keySet()));
         lastParams.clear();
+        lastProjection.clear();
     }
 
     /** {@link HttpSessionBindingListener}: the HTTP session was invalidated or timed out — release the
@@ -297,6 +321,7 @@ public class MedleySession implements ComponentHost, HttpSessionBindingListener 
         for (String id : ids) {
             ComponentInstance removed = instances.remove(id);
             lastParams.remove(id);
+            lastProjection.remove(id);
             if (removed != null) {
                 try {
                     removed.component().onDestroy();
