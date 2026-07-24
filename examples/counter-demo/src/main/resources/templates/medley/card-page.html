@@ -1,0 +1,8 @@
+<div>
+  <h1>Named slots</h1>
+  <medley-component name="card">
+    <span slot="header">{{ title }}</span>
+    <p>Figure (parent-owned): {{ figure }} <button @click="inc">+1</button></p>
+  </medley-component>
+  <button @click="rename">rename header</button>
+</div>
