@@ -162,7 +162,7 @@ class DefaultSlotRenderTest {
 
         ComponentInstance child = new ComponentInstance("root.0::panel", new PanelComponent(), slotless);
         Projection projection = new Projection("root",
-                List.of(new VNode.VText("root.0.0", "hi", true)));
+                Map.of(Projection.DEFAULT, List.of(new VNode.VText("root.0.0", "hi", true))));
 
         TemplateException e = assertThrows(TemplateException.class,
                 () -> child.setProjection(projection));
@@ -226,17 +226,17 @@ class DefaultSlotRenderTest {
         VNode.VElement b = p("root.1", "b");
         VNode.VElement c = p("root.2", "c");
 
-        child.setProjection(new Projection("root", List.of(a, b)));
+        child.setProjection(new Projection("root", Map.of(Projection.DEFAULT, List.of(a, b))));
         child.renderTree(0); // baseline
 
-        child.setProjection(new Projection("root", List.of(a, b, c)));
+        child.setProjection(new Projection("root", Map.of(Projection.DEFAULT, List.of(a, b, c))));
         List<app.besoft.medley.core.diff.Patch> grew = child.renderToPatches();
         assertEquals(1, grew.size(), grew.toString());
         var ins = (app.besoft.medley.core.diff.Patch.Insert) grew.get(0);
         assertEquals("root.2", ins.id(), "the new projected node keeps a parent id");
         assertEquals("root.0::panel.1", ins.parentId(), "and is inserted into the child's slot");
 
-        child.setProjection(new Projection("root", List.of(a, b)));
+        child.setProjection(new Projection("root", Map.of(Projection.DEFAULT, List.of(a, b))));
         List<app.besoft.medley.core.diff.Patch> shrank = child.renderToPatches();
         assertEquals(1, shrank.size(), shrank.toString());
         assertEquals("root.2", ((app.besoft.medley.core.diff.Patch.Remove) shrank.get(0)).id());
