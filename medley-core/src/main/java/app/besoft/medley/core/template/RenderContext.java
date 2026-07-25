@@ -7,7 +7,7 @@ package app.besoft.medley.core.template;
  *
  * <p>{@code slotsExpanded} is shared with derived (deeper) contexts on purpose: a
  * {@code <medley-slot>} reached through a partial must count against the same render, because
- * expanding the projection twice would put duplicate ids in the DOM (MEDLEY_DESIGN §11a).</p>
+ * expanding a slot's bucket twice would put duplicate ids in the DOM (MEDLEY_DESIGN §11a).</p>
  */
 final class RenderContext {
 
@@ -15,14 +15,14 @@ final class RenderContext {
     private final int depth;
     private final ComponentHost host;
     private final Projection projection;
-    private final int[] slotsExpanded;
+    private final java.util.Set<String> slotsExpanded;
 
     RenderContext(String componentId, int depth, ComponentHost host, Projection projection) {
-        this(componentId, depth, host, projection, new int[1]);
+        this(componentId, depth, host, projection, new java.util.HashSet<>());
     }
 
     private RenderContext(String componentId, int depth, ComponentHost host, Projection projection,
-                          int[] slotsExpanded) {
+                          java.util.Set<String> slotsExpanded) {
         this.componentId = componentId;
         this.depth = depth;
         this.host = host;
@@ -35,13 +35,14 @@ final class RenderContext {
     ComponentHost host() { return host; }
     Projection projection() { return projection; }
 
-    /** One level deeper (partial / component expansion), sharing this render's slot counter. */
+    /** One level deeper (partial / component expansion), sharing this render's expanded-slot set. */
     RenderContext deeper() {
         return new RenderContext(componentId, depth + 1, host, projection, slotsExpanded);
     }
 
-    /** Count a slot expansion and return the running total (1 for the first). */
-    int claimSlot() {
-        return ++slotsExpanded[0];
+    /** Register a slot expansion by name; false if this name was already expanded this render (a repeat
+     *  would splice the same bucket twice → duplicate ids). Shared across derived contexts. */
+    boolean claimSlot(String slotName) {
+        return slotsExpanded.add(slotName);
     }
 }

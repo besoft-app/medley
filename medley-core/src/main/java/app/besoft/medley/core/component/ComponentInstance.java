@@ -12,6 +12,7 @@ import app.besoft.medley.core.vnode.VNode;
 import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Runtime wrapper around a single {@link Component} instance.
@@ -71,9 +72,25 @@ public final class ComponentInstance {
      */
     public void setProjection(Projection projection) {
         Projection p = projection == null ? Projection.EMPTY : projection;
-        if (!p.isEmpty() && !renderer.mayDeclareSlot()) {
-            throw new TemplateException("Component '" + id + "' declares no <medley-slot>, but its "
-                    + "<medley-component> boundary was given body content");
+        if (!p.isEmpty()) {
+            if (!renderer.mayDeclareSlot()) {
+                throw new TemplateException("Component '" + id + "' declares no <medley-slot>, but its "
+                        + "<medley-component> boundary was given body content");
+            }
+            // 6.3: reject content aimed at a slot name the child never declares (a typo'd slot=, or
+            // unnamed content with no default slot). A null declared set means a <medley-partial> could
+            // declare anything → be permissive, matching mayDeclareSlot.
+            Set<String> declared = renderer.declaredSlotNames();
+            if (declared != null) {
+                for (String filled : p.filledSlots()) {
+                    if (!declared.contains(filled)) {
+                        String which = filled.isEmpty() ? "a default <medley-slot>"
+                                : "<medley-slot name=\"" + filled + "\">";
+                        throw new TemplateException("Component '" + id + "' declares no " + which
+                                + ", but its <medley-component> boundary projects content into it");
+                    }
+                }
+            }
         }
         this.projection = p;
     }

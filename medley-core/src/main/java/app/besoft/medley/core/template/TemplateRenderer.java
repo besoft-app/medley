@@ -5,9 +5,11 @@ import app.besoft.medley.core.vnode.VNode;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 
 /**
@@ -137,6 +139,49 @@ public final class TemplateRenderer {
         return false;
     }
 
+    /** Memoised declared-slot-name set (see {@link #declaredSlotNames()}); its {@code null} result is a
+     *  valid value ("unknown"), so a separate computed flag distinguishes it from "not yet computed". */
+    private volatile Set<String> declaredSlotNames;
+    private volatile boolean declaredSlotNamesComputed;
+
+    /**
+     * The set of {@code <medley-slot>} names this template declares (the default slot as {@code ""}
+     * = {@link Projection#DEFAULT}), or {@code null} when the template contains a {@code <medley-partial>}
+     * — a slot could hide inside the fragment, so the declared set is "unknown" and a caller must not
+     * fail-fast on an unmatched slot name (Stage 6, increment 6.3).
+     *
+     * <p>Deliberately a <b>static</b> scan (a slot behind a false {@code *if} still counts), memoised on
+     * the shared renderer; benign double-compute at worst.</p>
+     */
+    public Set<String> declaredSlotNames() {
+        if (!declaredSlotNamesComputed) {
+            Set<String> names = new HashSet<>();
+            boolean unknown = collectSlotNames(root, names);
+            declaredSlotNames = unknown ? null : Set.copyOf(names);
+            declaredSlotNamesComputed = true;
+        }
+        return declaredSlotNames;
+    }
+
+    /** Collect declared slot names into {@code names}; returns true if a {@code <medley-partial>} made
+     *  the declared set unknown (the caller then treats matching permissively). */
+    private static boolean collectSlotNames(TemplateNode node, Set<String> names) {
+        if (!(node instanceof TemplateNode.Element el)) {
+            return false;
+        }
+        if (PARTIAL_TAG.equals(el.tag())) {
+            return true;
+        }
+        if (SLOT_TAG.equals(el.tag())) {
+            names.add(el.staticAttrs().getOrDefault("name", Projection.DEFAULT));
+        }
+        boolean unknown = false;
+        for (TemplateNode child : el.children()) {
+            unknown |= collectSlotNames(child, names);
+        }
+        return unknown;
+    }
+
     /** Returns a list because *for can expand one template node into many VNodes. */
     private List<VNode> renderNode(TemplateNode node, String id, Object ctx, RenderContext rc) {
         return switch (node) {
@@ -230,7 +275,7 @@ public final class TemplateRenderer {
             return expandComponent(el, id, ctx, key, rc);
         }
         if (SLOT_TAG.equals(el.tag())) {
-            return expandSlot(el, id, key, rc);
+            return expandSlot(el, id, ctx, key, rc);
         }
         return renderSingleElement(el, id, ctx, key, rc);
     }
@@ -358,18 +403,38 @@ public final class TemplateRenderer {
             params.put(e.getKey(), ownerEval.eval(e.getValue()));
         }
 
-        // Children projection (6.2): the boundary's body renders HERE, in the parent's scope and
-        // id-space (hostId.N), and is handed to the child to splice at its <medley-slot>. The parent
-        // keeps ownership: the body's expressions read parent state and its events are parent actions.
+        // Children projection (6.2/6.3): the boundary's body renders HERE, in the parent's scope and
+        // id-space (hostId.N by absolute source position), bucketed by each top-level node's slot=
+        // target (unnamed → DEFAULT). The parent keeps ownership: the body's expressions read parent
+        // state and its events are parent actions; the child just splices each bucket at its matching
+        // <medley-slot>. Ids come from source position, not bucket, so a node's id does not depend on
+        // which slot it lands in.
         Projection projection = Projection.EMPTY;
         if (!el.children().isEmpty()) {
-            List<VNode> projected = new ArrayList<>();
+            Map<String, List<VNode>> buckets = new LinkedHashMap<>();
             int pos = 0;
             for (TemplateNode bodyNode : el.children()) {
-                projected.addAll(renderNode(bodyNode, hostId + "." + pos, ctx, rc));
+                String target = Projection.DEFAULT;
+                if (bodyNode instanceof TemplateNode.Element be) {
+                    String slot = be.staticAttrs().get("slot");
+                    if (slot != null && !slot.isBlank()) target = slot;
+                }
+                List<VNode> rendered = renderNode(bodyNode, hostId + "." + pos, ctx, rc);
+                // A body node that renders to nothing (an empty *for) must not create a bucket: an empty
+                // bucket would make the projection non-empty, spuriously trip the declared-name fail-fast,
+                // and suppress the slot's fallback. Skipping it means "provided nothing for this slot" →
+                // the slot shows its fallback, consistent with an omitted node. pos still advances so
+                // sibling ids stay stable.
+                if (!rendered.isEmpty()) {
+                    if (!Projection.DEFAULT.equals(target)) {
+                        // strip the slot= routing directive from each (possibly *for-expanded) top-level node
+                        rendered = rendered.stream().map(TemplateRenderer::stripSlotAttr).toList();
+                    }
+                    buckets.computeIfAbsent(target, k -> new ArrayList<>()).addAll(rendered);
+                }
                 pos++;
             }
-            projection = new Projection(rc.componentId(), projected);
+            projection = new Projection(rc.componentId(), buckets);
         }
 
         // An @event on the boundary is a child→parent callback binding (output name → owner action),
@@ -387,31 +452,56 @@ public final class TemplateRenderer {
     }
 
     /**
-     * Expand a {@code <medley-slot>}: splice in the content the parent authored inside this component's
-     * boundary (Stage 6, increment 6.2). The slot element itself lives in the <em>child's</em> id-space;
-     * its children keep their <em>parent</em> ids, because the parent rendered, owns and diffs them.
+     * Expand a {@code <medley-slot [name="x"]>}: splice in the parent's content bucket for this slot name
+     * (Stage 6 — 6.2 default slot, 6.3 named + fallback). The slot element itself lives in the
+     * <em>child's</em> id-space.
      *
-     * <p>The slot carries the projection owner's instance id as {@code data-medley-cid}. Projected
-     * content is physically nested inside the child's boundary host, so without this marker the client's
-     * walk-up ({@code ownerComponentId} in {@code medley.js}) would dispatch a projected {@code @click}
-     * to the child, which has no such action. It is only emitted when something is actually projected,
-     * so an unfilled slot adds no attribute to the diff.</p>
+     * <p>A <b>filled</b> slot's children keep their <em>parent</em> ids (the parent rendered, owns and
+     * diffs them) and the slot carries the projection owner's instance id as {@code data-medley-cid}:
+     * projected content is physically nested inside the child's boundary host, so without this marker the
+     * client's walk-up ({@code ownerComponentId} in {@code medley.js}) would dispatch a projected
+     * {@code @click} to the child, which has no such action.</p>
      *
-     * <p>The slot's own template children are ignored in 6.2; they become fallback content in 6.3.</p>
+     * <p>An <b>unfilled</b> slot renders its own template children as <b>fallback</b>, in the child's
+     * scope at child ids ({@code slotId.M}) — so fallback {@code {{ }}} reads child state and its
+     * {@code @event} is a child action, and it carries no parent cid.</p>
      */
-    private VNode expandSlot(TemplateNode.Element el, String id, String key, RenderContext rc) {
-        if (rc.claimSlot() > 1) {
-            throw new TemplateException("A component may expand at most one <medley-slot> per render — "
-                    + "expanding the projection twice would put duplicate ids in the DOM");
+    private VNode expandSlot(TemplateNode.Element el, String id, Object ctx, String key, RenderContext rc) {
+        String slotName = el.staticAttrs().getOrDefault("name", Projection.DEFAULT);
+        if (slotName.isBlank()) slotName = Projection.DEFAULT;
+        if (!rc.claimSlot(slotName)) {
+            throw new TemplateException("A component may expand the slot '" + slotName + "' at most once "
+                    + "per render — expanding a bucket twice would put duplicate ids in the DOM");
         }
-        Projection projection = rc.projection();
+        // The slot's own name attribute is kept on the emitted <medley-slot> (web-standard, self-
+        // describing, constant so it never adds diff churn); only the projected node's slot= directive
+        // is stripped (see stripSlotAttr).
         Map<String, String> attrs = new LinkedHashMap<>(el.staticAttrs());
-        List<VNode> children = List.of();
-        if (!projection.isEmpty()) {
-            attrs.put("data-medley-cid", projection.ownerComponentId());
-            children = projection.nodes();
+
+        List<VNode> projected = rc.projection().nodesFor(slotName);
+        if (!projected.isEmpty()) {
+            attrs.put("data-medley-cid", rc.projection().ownerComponentId());
+            return new VNode.VElement(id, SLOT_TAG, attrs, Map.of(), projected, key);
         }
-        return new VNode.VElement(id, SLOT_TAG, attrs, Map.of(), children, key);
+        // fallback: the slot's own children, rendered in the child's scope at child ids
+        List<VNode> fallback = new ArrayList<>();
+        int pos = 0;
+        for (TemplateNode child : el.children()) {
+            fallback.addAll(renderNode(child, id + "." + pos, ctx, rc));
+            pos++;
+        }
+        return new VNode.VElement(id, SLOT_TAG, attrs, Map.of(), fallback, key);
+    }
+
+    /** A copy of {@code node} with the {@code slot=} routing directive removed (only top-level projected
+     *  nodes carry it). Non-elements and slotless elements pass through unchanged. */
+    private static VNode stripSlotAttr(VNode node) {
+        if (node instanceof VNode.VElement ve && ve.attrs().containsKey("slot")) {
+            Map<String, String> attrs = new LinkedHashMap<>(ve.attrs());
+            attrs.remove("slot");
+            return new VNode.VElement(ve.id(), ve.tag(), attrs, ve.events(), ve.children(), ve.key(), ve.opaque());
+        }
+        return node;
     }
 
     private static Map<String, String> substituteEventParams(Map<String, String> events, Object ctx) {
