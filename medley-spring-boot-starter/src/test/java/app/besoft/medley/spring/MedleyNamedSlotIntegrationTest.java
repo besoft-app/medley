@@ -50,8 +50,13 @@ class MedleyNamedSlotIntegrationTest {
         ResponseEntity<String> ssr = rest.getForEntity("/card", String.class);
         assertThat(ssr.getStatusCode().value()).isEqualTo(200);
         assertThat(ssr.getBody()).contains("data-medley-cid=\"" + CHILD_CID + "\"");
-        assertThat(ssr.getBody()).as("named header slot filled, at its child id, routed to the parent")
-                .contains("<medley-slot data-medley-id=\"" + CHILD_CID + ".0.0\" data-medley-cid=\"root\" name=\"header\">");
+        // Attributes are asserted independently: VNode.VElement stores attrs via Map.copyOf, whose
+        // iteration order is unspecified, so the emitted order of name/data-medley-cid is not stable
+        // across JVMs — only their presence on the header slot element is contractual.
+        String headerSlotTag = tagAt(ssr.getBody(), CHILD_CID + ".0.0");
+        assertThat(headerSlotTag).as("the header slot is a real element at its child id").startsWith("<medley-slot ");
+        assertThat(headerSlotTag).as("named slot").contains("name=\"header\"");
+        assertThat(headerSlotTag).as("filled → routed to the parent").contains("data-medley-cid=\"root\"");
         assertThat(ssr.getBody()).as("the slot= routing directive was stripped from the projected node")
                 .doesNotContain("slot=\"header\"");
         assertThat(ssr.getBody()).as("projected header text keeps a parent id")
@@ -89,6 +94,16 @@ class MedleyNamedSlotIntegrationTest {
             assertThat(patches.get(0).get("id").asText()).isEqualTo(CHILD_CID + ".3.0");
             assertThat(patches.get(0).get("value").asText()).isEqualTo("1");
         }
+    }
+
+    /** The opening tag (from {@code '<'} to the matching {@code '>'}) of the element carrying
+     *  {@code data-medley-id=id}, so attributes can be asserted independently of their emitted order
+     *  ({@link app.besoft.medley.core.vnode.VNode.VElement} stores attrs via {@code Map.copyOf}, whose
+     *  iteration order is unspecified). */
+    private static String tagAt(String html, String id) {
+        int idAt = html.indexOf("data-medley-id=\"" + id + "\"");
+        assertThat(idAt).as("no element with id " + id).isGreaterThanOrEqualTo(0);
+        return html.substring(html.lastIndexOf('<', idAt), html.indexOf('>', idAt) + 1);
     }
 
     /** Minimal WS client: SSR for the session cookie, then one socket with a blocking inbox. */

@@ -141,6 +141,24 @@ class NamedSlotRenderTest {
     }
 
     @Test
+    void anEmptyForInTheBodyLeavesItsSlotUnfilledSoTheFallbackShows() {
+        // An empty *for renders nothing, so it must not create a bucket: the header slot then shows its
+        // fallback (no parent cid), and — because no bucket exists — the common empty-list pattern also
+        // can't trip the declared-name fail-fast.
+        class OwnerEmpty { public List<String> rows = List.of(); }
+        FakeHost h = new FakeHost().add("card", Card::new, CARD_TPL);
+        VNode.VElement div = (VNode.VElement) render(
+                "<div><medley-component name=\"card\">"
+              + "<p slot=\"header\" *for=\"r : rows\">{{ r }}</p>"
+              + "<span>body</span></medley-component></div>", h, new OwnerEmpty());
+        VNode.VElement headerSlot = (VNode.VElement) ((VNode.VElement) childOf(div).children().get(0)).children().get(0);
+
+        assertNull(headerSlot.attrs().get("data-medley-cid"), "empty *for did not fill the header slot");
+        assertEquals("Untitled", ((VNode.VText) headerSlot.children().get(0)).value(),
+                "so the header slot shows its fallback");
+    }
+
+    @Test
     void fallbackReadsChildStateAndBindsChildActions() {
         @Annotations.MedleyComponent("box") class Box {
             @Annotations.State public int count = 9;

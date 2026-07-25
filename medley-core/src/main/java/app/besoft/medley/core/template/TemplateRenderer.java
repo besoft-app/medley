@@ -5,9 +5,11 @@ import app.besoft.medley.core.vnode.VNode;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 
 /**
@@ -139,7 +141,7 @@ public final class TemplateRenderer {
 
     /** Memoised declared-slot-name set (see {@link #declaredSlotNames()}); its {@code null} result is a
      *  valid value ("unknown"), so a separate computed flag distinguishes it from "not yet computed". */
-    private volatile java.util.Set<String> declaredSlotNames;
+    private volatile Set<String> declaredSlotNames;
     private volatile boolean declaredSlotNamesComputed;
 
     /**
@@ -151,11 +153,11 @@ public final class TemplateRenderer {
      * <p>Deliberately a <b>static</b> scan (a slot behind a false {@code *if} still counts), memoised on
      * the shared renderer; benign double-compute at worst.</p>
      */
-    public java.util.Set<String> declaredSlotNames() {
+    public Set<String> declaredSlotNames() {
         if (!declaredSlotNamesComputed) {
-            java.util.Set<String> names = new java.util.HashSet<>();
+            Set<String> names = new HashSet<>();
             boolean unknown = collectSlotNames(root, names);
-            declaredSlotNames = unknown ? null : java.util.Set.copyOf(names);
+            declaredSlotNames = unknown ? null : Set.copyOf(names);
             declaredSlotNamesComputed = true;
         }
         return declaredSlotNames;
@@ -163,7 +165,7 @@ public final class TemplateRenderer {
 
     /** Collect declared slot names into {@code names}; returns true if a {@code <medley-partial>} made
      *  the declared set unknown (the caller then treats matching permissively). */
-    private static boolean collectSlotNames(TemplateNode node, java.util.Set<String> names) {
+    private static boolean collectSlotNames(TemplateNode node, Set<String> names) {
         if (!(node instanceof TemplateNode.Element el)) {
             return false;
         }
@@ -418,11 +420,18 @@ public final class TemplateRenderer {
                     if (slot != null && !slot.isBlank()) target = slot;
                 }
                 List<VNode> rendered = renderNode(bodyNode, hostId + "." + pos, ctx, rc);
-                if (!Projection.DEFAULT.equals(target)) {
-                    // strip the slot= routing directive from each (possibly *for-expanded) top-level node
-                    rendered = rendered.stream().map(TemplateRenderer::stripSlotAttr).toList();
+                // A body node that renders to nothing (an empty *for) must not create a bucket: an empty
+                // bucket would make the projection non-empty, spuriously trip the declared-name fail-fast,
+                // and suppress the slot's fallback. Skipping it means "provided nothing for this slot" →
+                // the slot shows its fallback, consistent with an omitted node. pos still advances so
+                // sibling ids stay stable.
+                if (!rendered.isEmpty()) {
+                    if (!Projection.DEFAULT.equals(target)) {
+                        // strip the slot= routing directive from each (possibly *for-expanded) top-level node
+                        rendered = rendered.stream().map(TemplateRenderer::stripSlotAttr).toList();
+                    }
+                    buckets.computeIfAbsent(target, k -> new ArrayList<>()).addAll(rendered);
                 }
-                buckets.computeIfAbsent(target, k -> new ArrayList<>()).addAll(rendered);
                 pos++;
             }
             projection = new Projection(rc.componentId(), buckets);

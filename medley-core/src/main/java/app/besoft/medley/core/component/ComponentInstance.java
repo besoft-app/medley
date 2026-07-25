@@ -12,6 +12,7 @@ import app.besoft.medley.core.vnode.VNode;
 import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Runtime wrapper around a single {@link Component} instance.
@@ -79,7 +80,7 @@ public final class ComponentInstance {
             // 6.3: reject content aimed at a slot name the child never declares (a typo'd slot=, or
             // unnamed content with no default slot). A null declared set means a <medley-partial> could
             // declare anything → be permissive, matching mayDeclareSlot.
-            java.util.Set<String> declared = renderer.declaredSlotNames();
+            Set<String> declared = renderer.declaredSlotNames();
             if (declared != null) {
                 for (String filled : p.filledSlots()) {
                     if (!declared.contains(filled)) {
